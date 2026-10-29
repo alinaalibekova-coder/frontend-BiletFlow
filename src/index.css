@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* Design values from the Figma wireframes. Change them here, not in components. */
+@theme {
+  --color-brand: #111111;   /* black buttons */
+  --color-surface: #f2f2f2; /* grey header, cards, placeholders */
+  --color-muted: #6b6b6b;   /* secondary text */
+}
+
+body {
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
