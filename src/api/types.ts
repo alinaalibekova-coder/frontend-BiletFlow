@@ -66,3 +66,38 @@ export interface Page<T> {
   last: boolean;
   empty: boolean;
 }
+export type OrderStatus = "PENDING" | "PAID" | "CANCELLED" | "EXPIRED";
+
+export interface OrderItem {
+  ticketTypeId: number;
+  ticketTypeName: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface Order {
+  id: number;
+  eventId: number;
+  eventTitle: string;
+  status: OrderStatus;
+  totalAmount: number;
+  createdAt: string;
+  expiresAt?: string;
+  paidAt?: string;
+  items: OrderItem[];
+}
+
+export type TicketStatus = "VALID" | "USED" | "CANCELLED";
+
+export interface Ticket {
+  id: number;
+  code: string;
+  status: TicketStatus;
+  orderId: number;
+  eventId: number;
+  eventTitle: string;
+  ticketTypeId: number;
+  ticketTypeName: string;
+  attendeeEmail: string;
+  usedAt?: string;
+}

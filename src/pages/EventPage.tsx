@@ -5,6 +5,7 @@ import { minPrice, useEvent, useTicketTypes } from "../hooks/useEvents";
 import { Button } from "../components/ui/Button";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { categoryLabel, formatLongDate, formatPrice, formatTime } from "../lib/format";
+import { TicketSelector } from "../components/events/TicketSelector";
 
 // Event page = the "event info" wireframe.
 export default function EventPage() {
@@ -34,6 +35,11 @@ export default function EventPage() {
   const onChooseTickets = () => {
     if (!isLoggedIn) return openLogin();
     document.getElementById("tickets")?.scrollIntoView({ behavior: "smooth" });
+  };
+    // Temporary: in Part 2 this will create a real order
+  const onContinue = (items: { ticketTypeId: number; quantity: number }[]) => {
+    if (!isLoggedIn) return openLogin();
+    alert(`Выбрано билетов: ${items.reduce((s, i) => s + i.quantity, 0)}. Оформление заказа — следующий шаг.`);
   };
 
   return (
@@ -92,22 +98,10 @@ export default function EventPage() {
         </section>
       )}
 
-      {visibleTypes.length > 0 && (
+            {visibleTypes.length > 0 && (
         <section id="tickets" className="mt-10 max-w-3xl">
           <h2 className="text-lg font-bold">Билеты</h2>
-          <ul className="mt-2 divide-y rounded-xl border">
-            {visibleTypes.map((t) => (
-              <li key={t.id} className="flex items-center justify-between gap-4 p-4">
-                <div>
-                  <p className="font-semibold">{t.name}</p>
-                  {t.description && <p className="text-xs text-muted">{t.description}</p>}
-                  <p className="text-xs text-muted">{t.available > 0 ? `Осталось: ${t.available}` : "Нет в наличии"}</p>
-                </div>
-                <p className="whitespace-nowrap font-semibold">{t.price === 0 ? "Бесплатно" : formatPrice(t.price)}</p>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-xs text-muted">Покупка билетов — следующий шаг разработки.</p>
+          <TicketSelector types={visibleTypes} onContinue={onContinue} />
         </section>
       )}
     </article>
