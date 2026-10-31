@@ -10,6 +10,9 @@ import type { User } from "../api/types";
 interface AuthContextValue {
   user: User | null;
   isLoggedIn: boolean;
+  isUserLoading: boolean;
+  userError: unknown;
+  refetchUser: () => void;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -54,6 +57,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextValue = {
     user: token ? me.data ?? null : null,
     isLoggedIn: !!token,
+    isUserLoading: !!token && me.isLoading,
+    userError: me.error,
+    refetchUser: () => { void me.refetch(); },
     login: async (email, password) => finishAuth(await authApi.login(email, password)),
     register: async (email, password) => finishAuth(await authApi.register(email, password)),
     logout,

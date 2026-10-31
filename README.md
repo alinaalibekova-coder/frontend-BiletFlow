@@ -10,6 +10,29 @@ React + TypeScript + Vite + Tailwind CSS. Talks to the team backend at
 | Home: banner, date strip, category menu, search, event grid | `/` | `GET /api/events`, `GET /api/events/{id}/ticket-types` |
 | Event page: details, venue, prices, ticket list | `/events/5` | `GET /api/events/{id}`, `GET /api/events/{id}/ticket-types` |
 | Login / registration window (email + password) | "Войти" button | `POST /api/auth/login`, `POST /api/auth/register`, `GET /api/users/me` |
+| Organizer dashboard: My Events, Create Event, Event Management | `/organizer/events` | `GET /api/organizers/profile`, `GET /api/events/organizer/{organizerId}`, `GET /api/venues`, `POST /api/events`, event publish/unpublish/cancel endpoints |
+
+## Organizer dashboard and backend integration
+
+The organizer dashboard uses the logged-in user from `GET /api/users/me`. The
+frontend permits access only when `user.role` is `ORGANIZER` (also accepting
+`ROLE_ORGANIZER`). Its role check is for navigation and user experience only:
+the backend must validate the bearer token, organizer role, and event ownership
+for every protected endpoint.
+
+The dashboard loads the organizer profile from `GET /api/organizers/profile`,
+then loads that profile's events from
+`GET /api/events/organizer/{organizerId}?page=0&size=100`. Event creation sends
+the Swagger `CreateEventRequest` fields to `POST /api/events`; a venue must
+already exist because `venueId` is required. Event management calls
+`POST /api/events/{eventId}/publish`, `/unpublish`, or `/cancel`. All requests
+use the shared API client, which adds the saved bearer token and reports backend
+errors.
+
+To grant access, the backend must assign the `ORGANIZER` role and make the
+organizer profile available to that user. The user also needs at least one
+venue before creating an event. Keep these authorization checks on the backend;
+the frontend role check must never be treated as a security boundary.
 
 Temporary workarounds until the backend adds them:
 

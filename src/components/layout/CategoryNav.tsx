@@ -1,4 +1,4 @@
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { usePublicEvents } from "../../hooks/useEvents";
 import { categoryLabel } from "../../lib/format";
 
@@ -7,8 +7,11 @@ import { categoryLabel } from "../../lib/format";
 // that the loaded events actually have.
 export function CategoryNav() {
   const { data: events } = usePublicEvents();
+  const { pathname } = useLocation();
   const [params] = useSearchParams();
   const active = params.get("category");
+
+  if (pathname.startsWith("/organizer")) return null;
 
   const categories = Array.from(new Set((events ?? []).map((e) => e.category).filter(Boolean)));
   if (categories.length === 0) return null;

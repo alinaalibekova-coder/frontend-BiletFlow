@@ -21,8 +21,28 @@ export interface Venue {
   address: string;
 }
 
+export interface OrganizerProfile {
+  id: number;
+  userId: number;
+  contactInformation: string;
+  verificationStatus: string;
+}
+
 export type EventStatus = "DRAFT" | "PUBLISHED" | "CANCELLED";
 export type Visibility = "PUBLIC" | "UNLISTED" | "PRIVATE";
+
+export interface CreateEventRequest {
+  title: string;
+  description?: string;
+  category: string;
+  startTime: string;
+  endTime?: string;
+  registrationOpeningTime?: string;
+  registrationClosingTime?: string;
+  capacity?: number;
+  visibilityStatus: Visibility;
+  venueId: number;
+}
 
 export interface Event {
   id: number;

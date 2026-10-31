@@ -46,6 +46,11 @@ export function Header() {
         </form>
 
         <div className="ml-auto flex items-center gap-6 md:ml-0">
+          {isLoggedIn && user?.role.trim().toUpperCase().replace(/^ROLE_/, "") === "ORGANIZER" && (
+            <Link to="/organizer/events" className="whitespace-nowrap text-sm font-semibold hover:underline">
+              Кабинет организатора
+            </Link>
+          )}
           {/* Language switch comes later (i18n step) */}
           <span className="text-xs text-muted" title="Переключение языка появится позже">
             KZ | <b className="text-black">RU</b> | ENG
