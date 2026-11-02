@@ -79,7 +79,7 @@ export function TicketSelector({ types, onContinue, busy = false }: Props) {
           <p className="text-lg font-bold">Итого: {formatPrice(total)}</p>
         </div>
         <Button onClick={() => onContinue(items)} disabled={totalCount === 0 || busy}>
-          {busy ? "Подождите…" : "Перейти к оплате"}
+          {busy ? "Создаём заказ…" : "Оформить заказ"}
         </Button>
       </div>
     </div>

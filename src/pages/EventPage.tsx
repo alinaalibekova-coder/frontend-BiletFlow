@@ -1,5 +1,7 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useMutation } from "@tanstack/react-query";
 import { ApiError } from "../api/client";
+import { createOrder, type OrderItemInput } from "../api/orders";
 import { useAuth } from "../auth/AuthContext";
 import { minPrice, useEvent, useTicketTypes } from "../hooks/useEvents";
 import { Button } from "../components/ui/Button";
@@ -11,9 +13,14 @@ import { EventPoster } from "../components/events/EventPoster";
 // Event page = the "event info" wireframe.
 export default function EventPage() {
   const id = Number(useParams().id);
+  const navigate = useNavigate();
   const { data: event, isLoading, error, refetch } = useEvent(id);
   const { data: types, isLoading: typesLoading } = useTicketTypes(id);
   const { isLoggedIn, openLogin } = useAuth();
+  const orderMutation = useMutation({
+    mutationFn: (items: OrderItemInput[]) => createOrder(id, items),
+    onSuccess: (order) => navigate(`/orders/${order.id}`),
+  });
 
   if (isLoading) return <EventPageSkeleton />;
 
@@ -39,10 +46,9 @@ export default function EventPage() {
     if (!isLoggedIn) return openLogin();
     document.getElementById("tickets")?.scrollIntoView({ behavior: "smooth" });
   };
-    // Temporary: in Part 2 this will create a real order
-  const onContinue = (items: { ticketTypeId: number; quantity: number }[]) => {
+  const onContinue = (items: OrderItemInput[]) => {
     if (!isLoggedIn) return openLogin();
-    alert(`Выбрано билетов: ${items.reduce((s, i) => s + i.quantity, 0)}. Оформление заказа — следующий шаг.`);
+    orderMutation.mutate(items);
   };
 
   return (
@@ -121,7 +127,12 @@ export default function EventPage() {
       {visibleTypes.length > 0 && (
         <section id="tickets" className="mt-10 max-w-3xl">
           <h2 className="text-lg font-bold">Билеты</h2>
-          <TicketSelector types={visibleTypes} onContinue={onContinue} />
+          {orderMutation.error && (
+            <p role="alert" className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">
+              {orderMutation.error instanceof Error ? orderMutation.error.message : "Не удалось создать заказ."}
+            </p>
+          )}
+          <TicketSelector types={visibleTypes} onContinue={onContinue} busy={orderMutation.isPending} />
         </section>
       )}
     </article>

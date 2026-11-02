@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { PageLayout } from "./components/layout/PageLayout";
 import HomePage from "./pages/HomePage";
 import EventPage from "./pages/EventPage";
+import OrderConfirmationPage from "./pages/OrderConfirmationPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import {
   CreateOrganizerEventPage,
@@ -20,6 +21,7 @@ export default function App() {
       <Route element={<PageLayout />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/events/:id" element={<EventPage />} />
+        <Route path="/orders/:orderId" element={<OrderConfirmationPage />} />
         <Route path="/organizer" element={<OrganizerGuard />}>
           <Route element={<OrganizerDashboardLayout />}>
             <Route index element={<Navigate to="events" replace />} />

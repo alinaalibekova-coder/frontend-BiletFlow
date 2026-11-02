@@ -9,6 +9,7 @@ React + TypeScript + Vite + Tailwind CSS. Talks to the team backend at
 | --- | --- | --- |
 | Home: banner, date strip, category menu, search, event grid | `/` | `GET /api/events`, `GET /api/events/{id}/ticket-types` |
 | Event page: details, venue, prices, ticket list | `/events/5` | `GET /api/events/{id}`, `GET /api/events/{id}/ticket-types` |
+| Order confirmation: order summary, free-ticket confirmation, simulated payment | `/orders/{id}` | `POST /api/orders`, `GET /api/orders/{id}`, `POST /api/orders/{id}/pay` |
 | Login / registration window (email + password) | "Войти" button | `POST /api/auth/login`, `POST /api/auth/register`, `GET /api/users/me` |
 | Organizer dashboard: My Events, Create Event, Event Management, edit event and tickets | `/organizer/events` | `GET /api/organizers/profile`, `GET /api/events/organizer/{organizerId}`, `GET`/`POST /api/venues`, `POST /api/events`, `GET`/`PUT /api/events/{id}`, `GET`/`POST /api/events/{id}/ticket-types`, poster upload/delete endpoints, event publish/unpublish/cancel endpoints |
 
@@ -51,6 +52,14 @@ available ticket types. If not, it asks the organizer to add tickets first or
 confirm publishing without tickets.
 For a published event with no ticket types, the public event page and event
 card display "Билеты не требуются" instead of offering ticket purchase.
+
+On the event page, selecting tickets creates an order through `POST /api/orders`
+and opens its confirmation screen. The screen loads the authoritative order
+summary from `GET /api/orders/{id}`. Confirming a zero-total order calls the
+`POST /api/orders/{id}/pay` endpoint without charging money; a paid order uses
+the same endpoint for simulated payment. Since the API has no separate
+free-order confirmation endpoint, the backend must allow zero-total pending
+orders to be finalized through this endpoint.
 
 Events include `posterUrl`; the frontend displays it on event cards and event
 pages, and organizers can upload or remove posters using
