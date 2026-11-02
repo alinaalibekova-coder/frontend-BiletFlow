@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 // The backend your team runs. During development every request to /api/...
 // is forwarded there by Vite, so the browser never complains about CORS.
-const BACKEND_URL = "http://89.168.75.147:8080";
+const BACKEND_URL = "https://biletflow.duckdns.org";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

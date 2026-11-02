@@ -6,6 +6,7 @@ import { Button } from "../components/ui/Button";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { categoryLabel, formatLongDate, formatPrice, formatTime } from "../lib/format";
 import { TicketSelector } from "../components/events/TicketSelector";
+import { EventPoster } from "../components/events/EventPoster";
 
 // Event page = the "event info" wireframe.
 export default function EventPage() {
@@ -29,6 +30,8 @@ export default function EventPage() {
   if (error || !event) return <ErrorMessage error={error} onRetry={() => refetch()} />;
 
   const visibleTypes = (types ?? []).filter((t) => !t.hidden);
+  const ticketsNotRequired = event.status === "PUBLISHED" && !typesLoading && types?.length === 0;
+  const posterNeedsAuth = event.status !== "PUBLISHED" || event.visibilityStatus === "PRIVATE";
   const price = minPrice(types);
   const soldOut = visibleTypes.length > 0 && visibleTypes.every((t) => t.available <= 0);
 
@@ -55,10 +58,11 @@ export default function EventPage() {
       </nav>
 
       <div className="mt-4 grid gap-6 md:grid-cols-[minmax(0,320px)_1fr]">
-        {/* Poster placeholder: the backend has no images yet */}
-        <div className="flex aspect-[3/4] items-center justify-center rounded-xl bg-surface text-2xl text-muted">
-          Постер
-        </div>
+        <EventPoster
+          posterUrl={event.posterUrl}
+          authenticated={posterNeedsAuth}
+          className="aspect-[3/4] rounded-xl text-2xl"
+        />
 
         <div>
           <p className="text-[11px] font-semibold uppercase text-muted">{categoryLabel(event.category)}</p>
@@ -80,12 +84,22 @@ export default function EventPage() {
               <div>
                 <p className="font-bold">{formatTime(event.startTime)}</p>
                 <p className="text-xs text-muted">
-                  {typesLoading ? "…" : price === null ? "Билетов пока нет" : price === 0 ? "Бесплатно" : `от ${formatPrice(price)}`}
+                  {typesLoading
+                    ? "…"
+                    : ticketsNotRequired
+                      ? "Билеты не требуются"
+                      : price === null
+                        ? "Билеты пока недоступны"
+                        : price === 0
+                          ? "Бесплатно"
+                          : `от ${formatPrice(price)}`}
                 </p>
               </div>
-              <Button onClick={onChooseTickets} disabled={price === null || soldOut}>
-                {soldOut ? "Билеты закончились" : "Выбрать билеты"}
-              </Button>
+              {!ticketsNotRequired && (
+                <Button onClick={onChooseTickets} disabled={price === null || soldOut}>
+                  {soldOut ? "Билеты закончились" : "Выбрать билеты"}
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -98,7 +112,13 @@ export default function EventPage() {
         </section>
       )}
 
-            {visibleTypes.length > 0 && (
+      {ticketsNotRequired && (
+        <p className="mt-10 max-w-3xl rounded-xl bg-green-50 p-4 text-sm font-medium text-green-800">
+          Билеты не требуются для этого события.
+        </p>
+      )}
+
+      {visibleTypes.length > 0 && (
         <section id="tickets" className="mt-10 max-w-3xl">
           <h2 className="text-lg font-bold">Билеты</h2>
           <TicketSelector types={visibleTypes} onContinue={onContinue} />

@@ -5,10 +5,12 @@ import EventPage from "./pages/EventPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import {
   CreateOrganizerEventPage,
+  EditOrganizerEventPage,
   ManageOrganizerEventsPage,
   MyOrganizerEventsPage,
   OrganizerDashboardLayout,
   OrganizerGuard,
+  OrganizerTicketsPage,
 } from "./pages/OrganizerPage";
 
 // Which page shows for which address.
@@ -22,6 +24,8 @@ export default function App() {
           <Route element={<OrganizerDashboardLayout />}>
             <Route index element={<Navigate to="events" replace />} />
             <Route path="events" element={<MyOrganizerEventsPage />} />
+            <Route path="events/:eventId/tickets" element={<OrganizerTicketsPage />} />
+            <Route path="events/:eventId/edit" element={<EditOrganizerEventPage />} />
             <Route path="create" element={<CreateOrganizerEventPage />} />
             <Route path="manage" element={<ManageOrganizerEventsPage />} />
           </Route>

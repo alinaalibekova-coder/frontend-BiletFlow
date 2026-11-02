@@ -19,6 +19,23 @@ export interface Venue {
   id: number;
   name: string;
   address: string;
+  capacity: number | null;
+}
+
+export interface CreateVenueRequest {
+  name: string;
+  address: string;
+  capacity: number;
+}
+
+export interface CreateTicketTypeRequest {
+  name: string;
+  description?: string;
+  price: number;
+  quantity: number;
+  salesStart?: string;
+  salesEnd?: string;
+  maxPerOrder?: number;
 }
 
 export interface OrganizerProfile {
@@ -44,6 +61,19 @@ export interface CreateEventRequest {
   venueId: number;
 }
 
+export interface UpdateEventRequest {
+  title?: string;
+  description?: string;
+  category?: string;
+  startTime?: string;
+  endTime?: string;
+  registrationOpeningTime?: string;
+  registrationClosingTime?: string;
+  capacity?: number;
+  visibilityStatus?: Visibility;
+  venueId?: number;
+}
+
 export interface Event {
   id: number;
   title: string;
@@ -58,6 +88,7 @@ export interface Event {
   status?: EventStatus;
   organizerId?: number;
   venue?: Venue;
+  posterUrl?: string | null;
 }
 
 export interface TicketType {

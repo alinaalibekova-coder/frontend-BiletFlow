@@ -24,15 +24,21 @@ interface RequestOptions {
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  const isFormData = options.body instanceof FormData;
+  if (options.body !== undefined && !isFormData) headers["Content-Type"] = "application/json";
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  const body = options.body === undefined
+    ? undefined
+    : options.body instanceof FormData
+      ? options.body
+      : JSON.stringify(options.body);
 
   let response: Response;
   try {
     response = await fetch(path, {
       method: options.method ?? "GET",
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body,
     });
   } catch {
     throw new ApiError(0, "Нет связи с сервером. Проверьте интернет.");
@@ -44,6 +50,23 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
 
   const text = await response.text();
   return (text ? JSON.parse(text) : undefined) as T;
+}
+
+export async function apiBlob(path: string): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  let response: Response;
+  try {
+    response = await fetch(path, { headers });
+  } catch {
+    throw new ApiError(0, "Нет связи с сервером. Проверьте интернет.");
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorMessage(response));
+  }
+  return response.blob();
 }
 
 // The backend's error format is not documented in Swagger yet, so we try
@@ -61,6 +84,7 @@ async function readErrorMessage(response: Response): Promise<string> {
     case 401: return "Нужно войти в аккаунт.";
     case 403: return "Нет доступа.";
     case 404: return "Не найдено.";
+    case 413: return "Файл превышает допустимый размер 5 МБ.";
     case 409: return "Такой пользователь уже существует.";
     default: return "Ошибка сервера. Попробуйте позже.";
   }
