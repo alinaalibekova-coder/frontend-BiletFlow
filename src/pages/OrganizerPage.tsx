@@ -73,6 +73,9 @@ function OrganizerEventsList({ events, emptyMessage }: { events: Event[]; emptyM
             <Link to={`/organizer/events/${event.id}/tickets`} className="text-sm font-semibold underline">
               Билеты
             </Link>
+            <Link to={`/organizer/events/${event.id}/staff`} className="text-sm font-semibold underline">
+              Сотрудники
+            </Link>
             {event.status !== "CANCELLED" && (
               <Link to={`/organizer/events/${event.id}/edit`} className="text-sm font-semibold underline">
                 Изменить
@@ -174,6 +177,7 @@ export function OrganizerDashboardLayout() {
     { to: "/organizer/events", label: "My Events" },
     { to: "/organizer/create", label: "Create Event" },
     { to: "/organizer/manage", label: "Event Management" },
+    { to: "/organizer/sales", label: "Продажи" },
   ];
 
   return (

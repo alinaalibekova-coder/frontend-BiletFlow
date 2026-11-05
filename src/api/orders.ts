@@ -1,5 +1,5 @@
-import { api } from "./client";
-import type { Order, Page } from "./types";
+import { api, apiBlob } from "./client";
+import type { Order, Page, Ticket } from "./types";
 
 export interface OrderItemInput {
   ticketTypeId: number;
@@ -20,4 +20,10 @@ export const payOrder = (id: number) => api<Order>(`/api/orders/${id}/pay`, { me
 export const cancelOrder = (id: number) => api<Order>(`/api/orders/${id}/cancel`, { method: "POST" });
 
 // GET /api/orders — my orders
-export const getMyOrders = () => api<Page<Order>>("/api/orders?page=0&size=50");
+export const getMyOrders = (page = 0, size = 20) =>
+  api<Page<Order>>(`/api/orders?page=${page}&size=${size}`);
+
+export const getMyTickets = (page = 0, size = 20) =>
+  api<Page<Ticket>>(`/api/tickets?page=${page}&size=${size}`);
+
+export const getTicketQr = (ticketId: number) => apiBlob(`/api/tickets/${ticketId}/qr`);

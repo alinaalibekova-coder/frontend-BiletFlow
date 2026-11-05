@@ -1,13 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { Button } from "../ui/Button";
 
 // Grey top bar: logo, city, search, languages, login.
 export function Header() {
   const { user, isLoggedIn, openLogin, logout } = useAuth();
-  const navigate = useNavigate();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState(params.get("q") ?? "");
 
   // Keep the box in sync when the URL changes (e.g. back button)
@@ -15,9 +14,20 @@ export function Header() {
 
   const onSearch = (e: FormEvent) => {
     e.preventDefault();
-    const q = query.trim();
-    navigate(q ? `/?q=${encodeURIComponent(q)}` : "/");
+    updateSearch(query);
   };
+
+  const updateSearch = (value: string) => {
+    setQuery(value);
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      const q = value.trim();
+      if (q) next.set("q", q);
+      else next.delete("q");
+      return next;
+    }, { replace: true });
+  };
+  const role = user?.role.trim().toUpperCase().replace(/^ROLE_/, "");
 
   return (
     <header className="bg-surface">
@@ -31,7 +41,7 @@ export function Header() {
           Алматы
         </span>
 
-        <form onSubmit={onSearch} role="search" className="order-last w-full md:order-none md:w-auto md:flex-1">
+        <form onSubmit={onSearch} role="search" className="order-last w-full min-w-0 md:order-none md:min-w-[220px] md:flex-1">
           <label htmlFor="search" className="sr-only">
             Поиск событий
           </label>
@@ -39,17 +49,26 @@ export function Header() {
             id="search"
             type="search"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => updateSearch(e.target.value)}
             placeholder="Поиск событий..."
-            className="w-full rounded-lg border border-gray-400 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+            className="block w-full min-w-0 rounded-lg border border-gray-400 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
           />
         </form>
 
         <div className="ml-auto flex items-center gap-6 md:ml-0">
-          {isLoggedIn && user?.role.trim().toUpperCase().replace(/^ROLE_/, "") === "ORGANIZER" && (
+          {isLoggedIn && role === "ORGANIZER" && (
             <Link to="/organizer/events" className="whitespace-nowrap text-sm font-semibold hover:underline">
               Кабинет организатора
             </Link>
+          )}
+          {isLoggedIn && role && ["EVENT_ADMIN", "EVENT_STAFF", "CHECK_IN_STAFF"].includes(role) && (
+            <Link to="/staff" className="whitespace-nowrap text-sm font-semibold hover:underline">Check-in</Link>
+          )}
+          {isLoggedIn && role && ["PLATFORM_ADMIN", "ADMIN"].includes(role) && (
+            <Link to="/admin/users" className="whitespace-nowrap text-sm font-semibold hover:underline">Администрирование</Link>
+          )}
+          {isLoggedIn && (
+            <Link to="/account" className="whitespace-nowrap text-sm font-semibold hover:underline">Мои билеты</Link>
           )}
           {/* Language switch comes later (i18n step) */}
           <span className="text-xs text-muted" title="Переключение языка появится позже">

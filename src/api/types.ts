@@ -152,3 +152,24 @@ export interface Ticket {
   attendeeEmail: string;
   usedAt?: string;
 }
+
+export interface CheckInStats {
+  eventId: number;
+  registered: number;
+  checkedIn: number;
+  notCheckedIn: number;
+}
+
+export interface CheckInResult {
+  result: string;
+  message: string;
+  checkedInAt?: string;
+  ticket: Ticket;
+}
+
+export interface EventStaff {
+  eventId: number;
+  userId: number;
+  email: string;
+  assignedAt: string;
+}

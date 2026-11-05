@@ -10,8 +10,11 @@ React + TypeScript + Vite + Tailwind CSS. Talks to the team backend at
 | Home: banner, date strip, category menu, search, event grid | `/` | `GET /api/events`, `GET /api/events/{id}/ticket-types` |
 | Event page: details, venue, prices, ticket list | `/events/5` | `GET /api/events/{id}`, `GET /api/events/{id}/ticket-types` |
 | Order confirmation: order summary, free-ticket confirmation, simulated payment | `/orders/{id}` | `POST /api/orders`, `GET /api/orders/{id}`, `POST /api/orders/{id}/pay` |
+| Attendee account: own orders, tickets, ticket QR, pending order cancellation | `/account` | `GET`/`POST /api/orders`, `GET /api/tickets`, `GET /api/tickets/{ticketId}/qr`, `POST /api/orders/{orderId}/cancel` |
+| Event staff check-in: assigned events, attendee search, scanning and check-in stats | `/staff` | `/api/check-in/events`, `/api/check-in/events/{eventId}/attendees`, `/scan`, `/stats`, `/{ticketId}/undo` |
+| Platform user administration: list, update email/password, delete users | `/admin/users` | `GET /api/users`, `PUT /api/users/{id}`, `DELETE /api/users/{id}` |
 | Login / registration window (email + password) | "Войти" button | `POST /api/auth/login`, `POST /api/auth/register`, `GET /api/users/me` |
-| Organizer dashboard: My Events, Create Event, Event Management, edit event and tickets | `/organizer/events` | `GET /api/organizers/profile`, `GET /api/events/organizer/{organizerId}`, `GET`/`POST /api/venues`, `POST /api/events`, `GET`/`PUT /api/events/{id}`, `GET`/`POST /api/events/{id}/ticket-types`, poster upload/delete endpoints, event publish/unpublish/cancel endpoints |
+| Organizer dashboard: events, tickets, sales counters, and event staff assignment | `/organizer/events` | `GET /api/organizers/profile`, `GET /api/events/organizer/{organizerId}`, `GET`/`POST /api/venues`, `POST /api/events`, `GET`/`PUT /api/events/{id}`, `GET`/`POST /api/events/{id}/ticket-types`, `/api/events/{eventId}/staff`, poster upload/delete endpoints, event publish/unpublish/cancel endpoints |
 
 ## Organizer dashboard and backend integration
 
@@ -52,6 +55,21 @@ available ticket types. If not, it asks the organizer to add tickets first or
 confirm publishing without tickets.
 For a published event with no ticket types, the public event page and event
 card display "Билеты не требуются" instead of offering ticket purchase.
+
+The organizer's Sales tab aggregates ticket-type `sold` and `available`
+counters across their events. Its amount is an estimate (`sold × ticket price`),
+not a settlement or authoritative revenue report: the current backend API has
+no organizer order list or sales analytics endpoint. Organizers can also assign
+and remove event staff by email.
+
+The attendee account at `/account` lists the signed-in user's paginated orders
+and tickets, shows ticket QR codes, and allows cancellation of pending orders.
+The staff check-in page at `/staff` exposes only assigned events and uses the
+backend attendee search, scan, undo, and check-in-stat endpoints. Platform
+administration at `/admin/users` lists users and supports credential updates or
+deletion; the API does not expose role assignment, so the page cannot change
+roles. Frontend role guards only affect navigation and UX; authorization must
+be enforced by the backend on every protected endpoint.
 
 On the event page, selecting tickets creates an order through `POST /api/orders`
 and opens its confirmation screen. The screen loads the authoritative order
