@@ -14,8 +14,17 @@ export function onAuthFailure(listener: (message: string) => void) {
   authFailureListeners.add(listener);
   return () => { authFailureListeners.delete(listener); };
 }
-function rejectAuthentication(status: number, message: string, token: string | null) {
-  if (token && getToken() === token && (status === 401 || status === 403)) {
+// 401 always means the session is gone. 403 usually means "you may not do THIS"
+// (e.g. another organizer's event), so it must not sign the user out; only a 403
+// that says the account itself is suspended ends the session.
+const SUSPENDED_CODES = new Set(["ACCOUNT_SUSPENDED", "USER_SUSPENDED"]);
+function endsSession(status: number, message: string, code?: string) {
+  if (status === 401) return true;
+  if (status !== 403) return false;
+  return (code !== undefined && SUSPENDED_CODES.has(code)) || /suspended|заблокирован|приостановлен/i.test(message);
+}
+function rejectAuthentication(status: number, message: string, token: string | null, code?: string) {
+  if (token && getToken() === token && endsSession(status, message, code)) {
     clearToken();
     authFailureListeners.forEach(listener => listener(message));
   }
@@ -58,8 +67,8 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   if (!response.ok) {
-    const message = await readErrorMessage(response);
-    rejectAuthentication(response.status, message, token);
+    const { message, code } = await readError(response);
+    rejectAuthentication(response.status, message, token, code);
     throw new ApiError(response.status, message);
   }
 
@@ -79,8 +88,8 @@ export async function apiBlob(path: string): Promise<Blob> {
     throw new ApiError(0, "Нет связи с сервером. Проверьте интернет.");
   }
   if (!response.ok) {
-    const message = await readErrorMessage(response);
-    rejectAuthentication(response.status, message, token);
+    const { message, code } = await readError(response);
+    rejectAuthentication(response.status, message, token, code);
     throw new ApiError(response.status, message);
   }
   return response.blob();
@@ -88,15 +97,22 @@ export async function apiBlob(path: string): Promise<Blob> {
 
 // The backend's error format is not documented in Swagger yet, so we try
 // the common shapes and fall back to a message based on the status code.
-async function readErrorMessage(response: Response): Promise<string> {
+async function readError(response: Response): Promise<{ message: string; code?: string }> {
+  let code: string | undefined;
   try {
     const data = await response.json();
+    const rawCode = data?.code ?? data?.error?.code;
+    if (typeof rawCode === "string") code = rawCode;
     const msg = data?.message ?? data?.error?.message ?? data?.detail ?? data?.error;
-    if (typeof msg === "string" && msg.length > 0) return msg;
+    if (typeof msg === "string" && msg.length > 0) return { message: msg, code };
   } catch {
     /* body was not JSON */
   }
-  switch (response.status) {
+  return { message: fallbackMessage(response.status), code };
+}
+
+function fallbackMessage(status: number): string {
+  switch (status) {
     case 400: return "Проверьте введённые данные.";
     case 401: return "Нужно войти в аккаунт.";
     case 402: return "Оплата отклонена. Заказ ожидает оплаты; можно повторить попытку.";

@@ -129,7 +129,7 @@ test("user search and suspension keep backend field names", async () => {
   request("/api/users/3/unsuspend", "POST", undefined, {});
   await users.setUserSuspended(3,false);
 });
-test("authenticated 403 signs out globally and preserves the suspension reason, including blob calls", async () => {
+test("a 403 for a suspended account signs out globally and preserves the suspension reason, including blob calls", async () => {
   const messages = [];
   const unsubscribe = client.onAuthFailure(message => messages.push(message));
   try {
@@ -140,6 +140,25 @@ test("authenticated 403 signs out globally and preserves the suspension reason, 
     client.saveToken("test-token");
     request("/api/events/7/calendar.ics", "GET", undefined, { message: "Account suspended" }, 403);
     await assert.rejects(platform.downloadCalendar(7));
+    assert.equal(client.getToken(), null);
+    assert.equal(messages.length, 2);
+  } finally { unsubscribe(); }
+});
+test("a plain 403 (not allowed) keeps the user signed in; 401 still signs out", async () => {
+  const messages = [];
+  const unsubscribe = client.onAuthFailure(message => messages.push(message));
+  try {
+    client.saveToken("test-token");
+    request("/api/events/7", "GET", undefined, { message: "Нет доступа к этому событию" }, 403);
+    await assert.rejects(events.getEvent(7), e => e.status === 403);
+    assert.equal(client.getToken(), "test-token");
+    assert.deepEqual(messages, []);
+    request("/api/events/7", "GET", undefined, { code: "ACCOUNT_SUSPENDED", message: "Blocked" }, 403);
+    await assert.rejects(events.getEvent(7));
+    assert.equal(client.getToken(), null);
+    client.saveToken("test-token");
+    request("/api/events/7", "GET", undefined, {}, 401);
+    await assert.rejects(events.getEvent(7), e => e.status === 401);
     assert.equal(client.getToken(), null);
     assert.equal(messages.length, 2);
   } finally { unsubscribe(); }
