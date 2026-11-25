@@ -38,6 +38,8 @@ import { EventSuspensionDialog } from "../components/events/EventSuspensionDialo
 import { formatPrice, formatLongDate, formatDateTime, formatTime } from "../lib/format";
 import type { CheckInResult, Order, Ticket, User } from "../api/types";
 import { useTicketEvent } from "../hooks/useEvents";
+import { Icon } from "../components/ui/Icons";
+import { StatusBadge } from "../components/ui/StatusBadge";
 import { ApiError } from "../api/client";
 
 const PAGE_SIZE = 20;
@@ -482,33 +484,59 @@ function MyTicketCard({ ticket }: { ticket: Ticket }) {
   const qrUrl = useObjectUrl(qr.data);
 
   return (
-    <article className="rounded-xl border p-4">
-      <p className="text-sm font-semibold">{ticket.eventTitle}</p>
-      {event.data && <p className="mt-1 text-sm">{formatLongDate(event.data.startTime, locale)}, {formatTime(event.data.startTime)}</p>}
-      {event.data?.venue && <p className="text-sm text-muted">{event.data.venue.name}{event.data.venue.address && `, ${event.data.venue.address}`}</p>}
-      {event.isLoading && <p className="mt-1 text-sm text-muted">{tx("Загрузка…")}</p>}
-      <h3 className="mt-2 font-semibold">{ticket.ticketTypeName}</h3>
-      {ticket.seatLabel && <p className="mt-1 text-sm font-medium">{ticket.seatLabel}</p>}
-      <p className="mt-2 text-sm">{tx("Статус: ")}{statusLabel(ticket.status)}</p>
-      <p className="mt-1 text-sm">{ticket.attendeeName ?? ticket.attendeeEmail}</p>
-      <p className="mt-1 text-xs text-muted">{tx("Билет №")}{ticket.id} {tx(" · Заказ №")}{ticket.orderId}</p>
-      {/* Cancellation is known from the event; only an event that is no longer public needs the calendar endpoint to tell. */}
-      {(event.data || eventGone) && <CalendarMenu eventId={ticket.eventId} cancelled={event.data?.status === "CANCELLED"} resolveStatus={eventGone} />}
-      {invalid ? (
-        <p role="status" data-qr-invalid="true" className="mt-3 rounded-lg border-2 border-red-600 bg-red-50 p-3 text-sm font-semibold text-red-900">
-          ✕ {ticket.status === "REFUNDED" ? tx("Билет возвращён") : tx("Билет отменён")}. {tx("QR-код недействителен для входа.")}
-        </p>
-      ) : (
-        <Button variant="secondary" className="mt-3" onClick={() => setShowQr((value) => !value)}>
-          {showQr ? tx("Скрыть QR-код") : tx("Показать QR-код")}
-        </Button>
-      )}
-      <Button variant="secondary" className={invalid ? "mt-3" : "mt-3 ml-2"} disabled={pdf.isPending || invalid} onClick={() => pdf.mutate()}>{pdf.isPending ? tx("Загрузка…") : tx("Скачать билет PDF")}</Button>
-      {pdf.error && <ApiErrorMessage error={pdf.error} />}
-      <Link to={`/support/new?ticketId=${ticket.id}`} className="mt-3 block text-sm underline">{tx("Помощь с билетом")}</Link>
-      {showQr && !invalid && qr.isLoading && <p className="mt-3 text-sm text-muted">{tx("Загружаем QR-код…")}</p>}
-      {showQr && !invalid && qr.error && <ApiErrorMessage error={qr.error} />}
-      {showQr && !invalid && qrUrl && <img src={qrUrl} alt={tx("QR-код билета {0}", [ticket.id])} className="mt-3 h-48 w-48 rounded border bg-white p-2" />}
+    <article className={`overflow-hidden rounded-[var(--radius-card)] border bg-white shadow-soft ${invalid ? "border-gray-200 opacity-90" : "border-gray-200"}`}>
+      <div className={`flex items-start justify-between gap-3 px-4 pb-4 pt-4 ${invalid ? "bg-surface" : "bg-linear-to-br from-primary-dark to-primary text-white"}`}>
+        <div className="min-w-0">
+          <p className={`text-xs font-semibold uppercase tracking-wide ${invalid ? "text-muted" : "text-white/80"}`}>{ticket.ticketTypeName}</p>
+          <h3 className="mt-1 text-lg font-bold leading-snug">{ticket.eventTitle}</h3>
+        </div>
+        <StatusBadge status={ticket.status} className="shrink-0" />
+      </div>
+      <div className="space-y-1.5 px-4 pt-4 text-sm">
+        {event.data && <p className="flex items-center gap-2"><Icon name="calendar" className="h-4 w-4 text-primary" />{formatLongDate(event.data.startTime, locale)}, {formatTime(event.data.startTime)}</p>}
+        {event.data?.venue && <p className="flex items-start gap-2 text-muted"><Icon name="pin" className="mt-0.5 h-4 w-4 text-primary" /><span>{event.data.venue.name}{event.data.venue.address && `, ${event.data.venue.address}`}</span></p>}
+        {event.isLoading && <p className="text-muted">{tx("Загрузка…")}</p>}
+        {ticket.seatLabel && <p className="flex items-center gap-2 font-medium"><Icon name="ticket" className="h-4 w-4 text-primary" />{ticket.seatLabel}</p>}
+        <p className="flex items-center gap-2"><Icon name="user" className="h-4 w-4 text-primary" />{ticket.attendeeName ?? ticket.attendeeEmail}</p>
+        <p className="sr-only">{tx("Статус: ")}{statusLabel(ticket.status)}</p>
+      </div>
+      {/* Perforation between the ticket details and its stub. */}
+      <div aria-hidden="true" className="relative my-4 h-4">
+        <span className="absolute -left-2 top-0 h-4 w-4 rounded-full border border-gray-200 bg-surface" />
+        <span className="absolute -right-2 top-0 h-4 w-4 rounded-full border border-gray-200 bg-surface" />
+        <span className="absolute inset-x-4 top-1/2 border-t-2 border-dashed border-gray-300" />
+      </div>
+      <div className="px-4 pb-4">
+        <p className="text-xs text-muted">{tx("Билет №")}{ticket.id} {tx(" · Заказ №")}{ticket.orderId}</p>
+        {invalid ? (
+          <p role="status" data-qr-invalid="true" className="mt-3 flex items-start gap-2 rounded-lg border-2 border-danger bg-danger-soft p-3 text-sm font-semibold text-danger-ink">
+            <Icon name="x" className="mt-0.5 h-4 w-4" />{ticket.status === "REFUNDED" ? tx("Билет возвращён") : tx("Билет отменён")}. {tx("QR-код недействителен для входа.")}
+          </p>
+        ) : (
+          <>
+            <button type="button" aria-expanded={showQr} aria-controls={`ticket-qr-${ticket.id}`} onClick={() => setShowQr((value) => !value)}
+              className="mt-3 flex min-h-11 w-full items-center justify-between rounded-lg border border-gray-300 px-3 text-sm font-semibold hover:border-primary hover:bg-primary-soft">
+              <span className="flex items-center gap-2"><Icon name="qr" className="h-5 w-5 text-primary" />{showQr ? tx("Скрыть QR-код") : tx("Показать QR-код")}</span>
+              <Icon name="chevronDown" className={`h-4 w-4 transition-transform ${showQr ? "rotate-180" : ""}`} />
+            </button>
+            <div id={`ticket-qr-${ticket.id}`} hidden={!showQr} className="mt-3">
+              {showQr && qr.isLoading && <div className="shimmer mx-auto h-48 w-48 rounded-lg" role="status" aria-label={tx("Загружаем QR-код…")} />}
+              {showQr && qr.error && <ApiErrorMessage error={qr.error} />}
+              {showQr && qrUrl && <img src={qrUrl} alt={tx("QR-код билета {0}", [ticket.id])} className="mx-auto h-56 w-56 rounded-lg border bg-white p-2" />}
+            </div>
+          </>
+        )}
+        <div className="mt-3 flex flex-wrap items-start gap-2">
+          <button type="button" disabled={pdf.isPending || invalid} onClick={() => pdf.mutate()}
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-surface px-3 text-sm font-semibold hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50">
+            <Icon name="download" className="h-4 w-4" />{pdf.isPending ? tx("Загрузка…") : tx("Скачать билет PDF")}
+          </button>
+          {/* Cancellation is known from the event; only an event that is no longer public needs the calendar endpoint to tell. */}
+          {(event.data || eventGone) && <CalendarMenu eventId={ticket.eventId} cancelled={event.data?.status === "CANCELLED"} resolveStatus={eventGone} className="" />}
+        </div>
+        {pdf.error && <ApiErrorMessage error={pdf.error} />}
+        <Link to={`/support/new?ticketId=${ticket.id}`} className="mt-2 inline-flex min-h-10 items-center gap-1.5 text-sm font-semibold text-primary-dark underline"><Icon name="help" className="h-4 w-4" />{tx("Помощь с билетом")}</Link>
+      </div>
     </article>
   );
 }

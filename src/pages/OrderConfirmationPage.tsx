@@ -12,6 +12,8 @@ import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { CalendarMenu } from "../components/events/EventExtras";
 import { formatPrice, formatDateTime, parseDate } from "../lib/format";
 import { HoldCountdown } from "../components/orders/HoldCountdown";
+import { CheckoutSteps } from "../components/orders/CheckoutSteps";
+import { StatusBadge } from "../components/ui/StatusBadge";
 
 const statusLabels: Record<OrderStatus, string> = {
   PENDING: "Ожидает подтверждения",
@@ -96,16 +98,17 @@ export default function OrderConfirmationPage({ paymentResult = false }: { payme
 
   return (
     <section className="mx-auto max-w-2xl" aria-labelledby="order-title">
+      <CheckoutSteps current={currentOrder.status === "PAID" ? 3 : 2} failed={["CANCELLED", "EXPIRED"].includes(currentOrder.status) || holdOver} />
       <p className="text-sm text-muted">{tx("Заказ №")}{currentOrder.id}</p>
       <h1 id="order-title" className="mt-1 text-2xl font-bold">
         {currentOrder.status === "PAID" ? tx("Заказ подтверждён") : tx("Подтверждение заказа")}
       </h1>
       <p className="mt-2 text-sm text-muted">{currentOrder.eventTitle}</p>
       {currentOrder.attendeeName && <p className="mt-2 text-sm">{tx("Посетитель: ")}{currentOrder.attendeeName}</p>}
-      {pending && currentOrder.expiresAt && <HoldCountdown expiresAt={currentOrder.expiresAt} onExpire={onHoldExpired} />}
+      {pending && currentOrder.expiresAt && <HoldCountdown expiresAt={currentOrder.expiresAt} createdAt={currentOrder.createdAt} onExpire={onHoldExpired} />}
       {paymentResult && currentOrder.status === "PENDING" && <p role="status" className="mt-4 rounded-lg bg-amber-50 p-4 text-sm">{tx("Проверяем оплату. Билеты появятся после подтверждения банка. Статус обновляется автоматически.")}</p>}
 
-      <section className="mt-6 rounded-xl border p-5" aria-label={tx("Состав заказа")}>
+      <section className="mt-6 rounded-[var(--radius-card)] border border-gray-200 bg-white p-5 shadow-soft" aria-label={tx("Состав заказа")}>
         <div className="space-y-3">
           {currentOrder.items.map((item, index) => (
             <div key={item.seatId ?? `${item.ticketTypeId}-${index}`} className="flex justify-between gap-4 text-sm">
@@ -119,7 +122,7 @@ export default function OrderConfirmationPage({ paymentResult = false }: { payme
           <span>{tx("Итого")}</span>
           <span>{formatPrice(currentOrder.totalAmount, locale)}</span>
         </div>
-        <p className="mt-3 text-sm text-muted">{tx("Статус: ")}{tx(statusLabels[currentOrder.status])}</p>
+        <p className="mt-3 flex items-center gap-2 text-sm text-muted">{tx("Статус: ")}<StatusBadge status={currentOrder.status} label={tx(statusLabels[currentOrder.status])} /></p>
       </section>
 
       {currentOrder.status === "PAID" && (

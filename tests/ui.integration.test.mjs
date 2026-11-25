@@ -830,3 +830,47 @@ test("the event page has a poster header, map links, anchored sections, share, a
   assert.match(html, /Политика возврата/);
   assert.match(html, /Задать вопрос о событии/);
 });
+test("ticket rows are stubs with 44px steppers and an order summary", async () => {
+  const html = await renderRoute("/events/7", attendee, buyable);
+  assert.match(html, /data-ticket-stub="true"/);
+  assert.match(html, /class="flex h-11 w-11[^"]*"[^>]*>\+</);
+  assert.match(html, /border-dashed/);
+  assert.match(html, /data-order-summary="true"/);
+  assert.match(html, /disabled="" aria-label="Убрать билет Standard"/);
+});
+test("the order page shows checkout steps and a countdown ring", async () => {
+  const html = (await renderRoute("/orders/42", attendee, [[["order", 42], { ...order, createdAt: almatyLocal(-5 * 60_000), expiresAt: almatyLocal(10 * 60_000) }], [["order-payments", 42], []]])).replace(/<!-- -->/g, "");
+  assert.match(html, /aria-label="Шаги оформления"/);
+  assert.match(html, /<li aria-current="step"[\s\S]*?Оплата/);
+  assert.equal((html.match(/\(выполнено\)/g) ?? []).length, 2);
+  assert.match(html, /stroke-dasharray="(6[5-7]\.\d+) 100"/);
+  const paid = (await renderRoute("/orders/42", attendee, [[["order", 42], { ...order, status: "PAID" }], [["order-payments", 42], []]])).replace(/<!-- -->/g, "");
+  assert.equal((paid.match(/\(выполнено\)/g) ?? []).length, 4);
+  assert.match(paid, /data-status="PAID"/);
+});
+test("wallet ticket cards use status badges with icon and text, a perforation and an expandable QR", async () => {
+  const base = { eventTitle: "Jazz", ticketTypeName: "Standard", attendeeEmail: attendee.email, orderId: 42, eventId: 7 };
+  const html = await renderRoute("/account", attendee, [[["my-orders", 0], page([])], [["my-tickets", 0], page(["VALID", "USED", "CANCELLED", "REFUNDED"].map((status, i) => ({ ...base, id: 5 + i, status })))]]);
+  for (const [status, text] of [["VALID", "Действителен"], ["USED", "Использован"], ["CANCELLED", "Отменено"], ["REFUNDED", "Возвращён"]]) {
+    assert.match(html, new RegExp(`data-status="${status}"[^>]*><svg[\\s\\S]*?</svg>${text}`), status);
+  }
+  assert.match(html, /aria-expanded="false" aria-controls="ticket-qr-5"/);
+  assert.match(html, /id="ticket-qr-5" hidden=""/);
+  assert.match(html, /border-dashed/);
+});
+test("seat maps colour sections by price with a legend, zoom controls and a running total", async () => {
+  const sections = [
+    { id: 1, key: "A", name: "North", kind: "SEATED", onSale: true, ticketTypeId: 4, ticketTypeName: "Standard", price: 1000, available: 3, x: 0, y: 0, width: 50, height: 40 },
+    { id: 2, key: "B", name: "South", kind: "SEATED", onSale: true, ticketTypeId: 5, ticketTypeName: "VIP", price: 3000, available: 3, x: 50, y: 0, width: 50, height: 40 },
+  ];
+  const seats = [{ id: 1, row: "A", number: 1, x: 10, y: 20, accessible: false, status: "AVAILABLE" }, { id: 2, row: "A", number: 2, x: 20, y: 20, accessible: false, status: "AVAILABLE" }];
+  const selected = { 1: { id: 1, sectionId: 1, sectionName: "North", row: "A", number: 1, ticketTypeId: 4, ticketTypeName: "Standard", price: 1000 }, 9: { id: 9, sectionId: 2, sectionName: "South", row: "C", number: 4, ticketTypeId: 5, ticketTypeName: "VIP", price: 3000 } };
+  const html = (await renderSeatMap({ eventId: 7, width: 100, height: 40, sections }, seats, selected)).replace(/<!-- -->/g, "");
+  assert.match(html, /style="fill:#f47230"/);
+  assert.match(html, /aria-label="Цены по секторам"/);
+  assert.match(html, /background:#257de0[^>]*><\/span>1[\s ]000 ₸/);
+  assert.match(html, /role="toolbar" aria-label="Масштаб схемы"/);
+  assert.match(html, /aria-label="Приблизить"/);
+  assert.match(html, /Сумма за места: 4[\s ]000 ₸/);
+  assert.match(html, /Выбранные места · 2/);
+});

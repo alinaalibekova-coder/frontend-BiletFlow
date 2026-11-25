@@ -1,10 +1,11 @@
-import { useEffect, useMemo, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getSectionSeats, type Seat, type SeatMap, type SeatSection } from "../../api/seating";
 import { formatPrice } from "../../lib/format";
 import { MutationError } from "../ui/AsyncState";
 import { Button } from "../ui/Button";
+import { Icon } from "../ui/Icons";
 
 // A seat the attendee picked. Lives in the browser until checkout sends its id in seatIds.
 export interface SelectedSeat {
@@ -52,6 +53,22 @@ export function seatLook(status: Seat["status"], isSelected: boolean): { fill: s
 export const seatSymbol = (seat: Pick<Seat, "status" | "number">, isSelected: boolean) =>
   isSelected ? "✓" : ({ AVAILABLE: String(seat.number), HELD: "…", YOURS: "Y", SOLD: "×", UNAVAILABLE: "—" })[seat.status];
 
+// Price categories: the dataviz reference categorical slots, in their validated order (adjacent
+// CVD ΔE >= 11.8). Every section also prints its price and the legend lists them, so colour is
+// never the only cue. A 7th price and beyond fold into neutral grey.
+const PRICE_COLORS = ["#257de0", "#f47230", "#00b894", "#f2a600", "#ee7fac", "#008a17"];
+const OTHER_PRICE_COLOR = "#9ca3af";
+function luminance(hex: string) {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+// White or near-black label, whichever contrasts more with the fill.
+export const labelOn = (hex: string) => (1.05 / (luminance(hex) + 0.05) >= (luminance(hex) + 0.05) / 0.05 ? "#ffffff" : "#111111");
+export function priceColors(sections: SeatSection[]): Map<number, string> {
+  const prices = [...new Set(sections.map(s => s.price).filter((p): p is number => p !== null))].sort((a, b) => a - b);
+  return new Map(prices.map((price, i) => [price, PRICE_COLORS[i] ?? OTHER_PRICE_COLOR]));
+}
+
 const pickable = (section: SeatSection) =>
   section.kind === "SEATED" && section.onSale && section.ticketTypeId !== null && section.available > 0;
 
@@ -66,6 +83,8 @@ export function SeatMapPicker({ eventId, map, selected, activeSectionId, onSelec
   const width = map.width ?? Math.max(...sections.map((s) => s.x + s.width), 1);
   const height = map.height ?? Math.max(...sections.map((s) => s.y + s.height), 1);
   const font = Math.max(width, height) / 55;
+  const colors = useMemo(() => priceColors(sections), [sections]);
+  const selectedTotal = selectedList.reduce((sum, seat) => sum + seat.price, 0);
 
   const seats = useQuery({
     queryKey: ["seat-section", eventId, activeSectionId],
@@ -113,14 +132,15 @@ export function SeatMapPicker({ eventId, map, selected, activeSectionId, onSelec
           const canPick = !disabled && pickable(section);
           const isActive = section.id === activeSectionId;
           const picked = selectedList.filter((seat) => seat.sectionId === section.id).length;
-          const look = section.kind === "STANDING"
-            ? "fill-white stroke-gray-400"
-            : isActive
-              ? "fill-primary stroke-primary-dark"
-              : canPick
-                ? "fill-white stroke-primary cursor-pointer hover:fill-primary-soft"
-                : "fill-gray-200 stroke-gray-300";
-          const textLook = isActive ? "fill-white" : section.kind === "SEATED" && !canPick ? "fill-gray-400" : "fill-black";
+          const tone = section.price !== null ? colors.get(section.price) : undefined;
+          // Active: primary; on sale: its price colour; sold out or not on sale: grey with a muted label.
+          const fill = isActive ? undefined : (section.kind === "STANDING" || canPick) && tone ? tone : undefined;
+          const look = isActive
+            ? "fill-primary stroke-primary-dark"
+            : fill
+              ? `stroke-white ${canPick ? "cursor-pointer hover:opacity-85" : ""}`
+              : section.kind === "STANDING" ? "fill-white stroke-gray-400" : "fill-gray-200 stroke-gray-300";
+          const textColor = isActive ? "#ffffff" : fill ? labelOn(fill) : section.kind === "SEATED" && !canPick ? "#4b5563" : "#111111";
           const label = section.kind === "STANDING"
             ? tx("{0}: стоячая зона, {1}", [section.name, section.price === null ? tx("не продаётся") : formatPrice(section.price, locale)])
             : canPick
@@ -143,17 +163,23 @@ export function SeatMapPicker({ eventId, map, selected, activeSectionId, onSelec
                 x={section.x} y={section.y} width={section.width} height={section.height} rx={font / 3}
                 strokeWidth={3} strokeDasharray={section.kind === "STANDING" ? `${font / 2} ${font / 3}` : undefined}
                 className={`transition-colors ${look}`}
+                style={fill ? { fill } : undefined}
               />
-              <text x={section.x + section.width / 2} y={section.y + section.height / 2 - font * 0.4} fontSize={font} textAnchor="middle" className={`pointer-events-none font-semibold ${textLook}`}>
+              <text x={section.x + section.width / 2} y={section.y + section.height / 2 - font * 0.4} fontSize={font} textAnchor="middle" fill={textColor} className="pointer-events-none font-semibold">
                 {section.key}{picked > 0 ? ` · ${picked}` : ""}
               </text>
-              <text x={section.x + section.width / 2} y={section.y + section.height / 2 + font * 0.8} fontSize={font * 0.75} textAnchor="middle" className={`pointer-events-none ${textLook}`}>
+              <text x={section.x + section.width / 2} y={section.y + section.height / 2 + font * 0.8} fontSize={font * 0.75} textAnchor="middle" fill={textColor} className="pointer-events-none">
                 {section.price === null ? "—" : formatPrice(section.price, locale)}
               </text>
             </g>
           );
         })}
       </svg>
+      {colors.size > 0 && <ul aria-label={tx("Цены по секторам")} className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
+        {[...colors.entries()].map(([price, color]) => <li key={price} className="flex items-center gap-1.5">
+          <span aria-hidden="true" className="inline-block h-3.5 w-5 rounded" style={{ background: color }} />{formatPrice(price, locale)}
+        </li>)}
+      </ul>}
 
       {active && (
         <div className="rounded-lg border p-3">
@@ -168,6 +194,7 @@ export function SeatMapPicker({ eventId, map, selected, activeSectionId, onSelec
           <MutationError error={seats.error} />
           {seats.data && (
             <SectionSeats
+              key={seats.data.section.id}
               section={seats.data.section}
               seats={seats.data.seats}
               selected={selected}
@@ -189,18 +216,21 @@ export function SeatMapPicker({ eventId, map, selected, activeSectionId, onSelec
       )}
 
       {selectedList.length > 0 && (
-        <div>
-          <p className="text-sm font-semibold">{tx("Выбранные места")}</p>
+        <div className="rounded-lg bg-primary-soft p-3">
+          <p className="flex flex-wrap items-baseline justify-between gap-2 text-sm font-semibold text-primary-dark">
+            <span>{tx("Выбранные места")} · {selectedList.length}</span>
+            <span aria-live="polite">{tx("Сумма за места: {0}", [formatPrice(selectedTotal, locale)])}</span>
+          </p>
           <ul className="mt-2 flex flex-wrap gap-2">
             {selectedList.map((seat) => (
-              <li key={seat.id} className="flex items-center gap-2 rounded-full bg-surface py-1 pl-3 pr-1 text-xs">
+              <li key={seat.id} className="flex items-center gap-2 rounded-full bg-white py-1 pl-3 pr-1 text-xs shadow-soft">
                 <span>{seat.sectionName} · {tx("ряд {0}, место {1}", [seat.row, seat.number])} · {formatPrice(seat.price, locale)}</span>
                 <button
                   type="button"
                   disabled={disabled}
                   onClick={() => onToggle(seat)}
                   aria-label={tx("Убрать место: ряд {0}, место {1}", [seat.row, seat.number])}
-                  className="h-6 w-6 rounded-full hover:bg-gray-300 disabled:opacity-40"
+                  className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-primary-soft disabled:opacity-40"
                 >×</button>
               </li>
             ))}
@@ -220,9 +250,11 @@ function SectionSeats({ section, seats, selected, disabled, onToggle }: {
 }) {
   const { tx } = useLanguage();
   const byId = useMemo(() => new Map(seats.map((seat) => [seat.id, seat])), [seats]);
+  // Zoom 1–4×; pan is the view centre's offset from the middle, as a share of the full size.
+  const [view, setView] = useState({ zoom: 1, x: 0, y: 0 });
 
   // Seat size from the closest neighbours in a row, so any layout's spacing works.
-  const { radius, rows, viewBox } = useMemo(() => {
+  const { radius, rows, box } = useMemo(() => {
     const rowMap = new Map<string, Seat[]>();
     for (const seat of seats) rowMap.set(seat.row, [...(rowMap.get(seat.row) ?? []), seat]);
     const sortedRows = [...rowMap.entries()].map(([label, row]) => [label, [...row].sort((a, b) => a.number - b.number)] as const);
@@ -248,11 +280,23 @@ function SectionSeats({ section, seats, selected, disabled, onToggle }: {
     const ys = [...seats.map((seat) => seat.y), ...rows.map((row) => row.y)];
     const minX = Math.min(...xs) - spacing;
     const minY = Math.min(...ys) - spacing;
-    const viewBox = `${minX} ${minY} ${Math.max(...xs) + spacing - minX} ${Math.max(...ys) + spacing - minY}`;
-    return { radius: spacing * 0.4, rows, viewBox };
+    const box = { x: minX, y: minY, w: Math.max(...xs) + spacing - minX, h: Math.max(...ys) + spacing - minY };
+    return { radius: spacing * 0.4, rows, box };
   }, [seats]);
 
   if (seats.length === 0) return <p className="mt-3 text-sm text-muted">{tx("В этом секторе нет мест для выбора.")}</p>;
+
+  const limit = (zoom: number) => (1 - 1 / zoom) / 2;
+  const clampView = (next: { zoom: number; x: number; y: number }) => {
+    const zoom = Math.min(4, Math.max(1, next.zoom));
+    return { zoom, x: Math.max(-limit(zoom), Math.min(limit(zoom), next.x)), y: Math.max(-limit(zoom), Math.min(limit(zoom), next.y)) };
+  };
+  const zoomBy = (factor: number) => setView(v => clampView({ ...v, zoom: v.zoom * factor }));
+  const pan = (dx: number, dy: number) => setView(v => clampView({ ...v, x: v.x + dx / v.zoom, y: v.y + dy / v.zoom }));
+  const w = box.w / view.zoom;
+  const h = box.h / view.zoom;
+  const viewBox = `${box.x + box.w * (0.5 + view.x) - w / 2} ${box.y + box.h * (0.5 + view.y) - h / 2} ${w} ${h}`;
+  const zoomed = view.zoom > 1;
 
   // One handler for the whole section: a stadium sector has a thousand seats.
   const seatFrom = (target: EventTarget) => byId.get(Number((target as Element).getAttribute?.("data-seat-id")));
@@ -261,13 +305,34 @@ function SectionSeats({ section, seats, selected, disabled, onToggle }: {
   };
   const onClick = (event: MouseEvent<SVGSVGElement>) => toggle(seatFrom(event.target));
   const onKeyDown = (event: KeyboardEvent<SVGSVGElement>) => {
+    // + / - / 0 zoom, arrow keys pan when zoomed in; Enter and Space pick the focused seat.
+    const panKeys: Record<string, [number, number]> = { ArrowLeft: [-0.15, 0], ArrowRight: [0.15, 0], ArrowUp: [0, -0.15], ArrowDown: [0, 0.15] };
+    if (event.key === "+" || event.key === "=") { event.preventDefault(); zoomBy(1.5); return; }
+    if (event.key === "-") { event.preventDefault(); zoomBy(1 / 1.5); return; }
+    if (event.key === "0") { event.preventDefault(); setView({ zoom: 1, x: 0, y: 0 }); return; }
+    if (panKeys[event.key] && zoomed) { event.preventDefault(); pan(...panKeys[event.key]); return; }
     if (event.key !== "Enter" && event.key !== " ") return;
     const seat = seatFrom(event.target);
     if (seat) { event.preventDefault(); toggle(seat); }
   };
 
+  const tool = "flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-lg font-bold hover:border-primary hover:bg-primary-soft disabled:opacity-40";
   return (
-    <svg viewBox={viewBox} className="mt-3 h-auto max-h-[28rem] w-full" role="group" aria-label={tx("Места сектора {0}", [section.name])} onClick={onClick} onKeyDown={onKeyDown}>
+    <div className="mt-3">
+    <div role="toolbar" aria-label={tx("Масштаб схемы")} className="flex flex-wrap items-center gap-1.5">
+      <button type="button" className={tool} onClick={() => zoomBy(1.5)} disabled={view.zoom >= 4} aria-label={tx("Приблизить")}>+</button>
+      <button type="button" className={tool} onClick={() => zoomBy(1 / 1.5)} disabled={!zoomed} aria-label={tx("Отдалить")}>−</button>
+      <button type="button" className={`${tool} w-auto px-3 text-sm`} onClick={() => setView({ zoom: 1, x: 0, y: 0 })} disabled={!zoomed}>{tx("Сбросить масштаб")}</button>
+      {zoomed && <>
+        <button type="button" className={tool} onClick={() => pan(-0.25, 0)} aria-label={tx("Сдвинуть влево")}><Icon name="chevronLeft" className="h-4 w-4" /></button>
+        <button type="button" className={tool} onClick={() => pan(0, -0.25)} aria-label={tx("Сдвинуть вверх")}><Icon name="chevronDown" className="h-4 w-4 rotate-180" /></button>
+        <button type="button" className={tool} onClick={() => pan(0, 0.25)} aria-label={tx("Сдвинуть вниз")}><Icon name="chevronDown" className="h-4 w-4" /></button>
+        <button type="button" className={tool} onClick={() => pan(0.25, 0)} aria-label={tx("Сдвинуть вправо")}><Icon name="chevronRight" className="h-4 w-4" /></button>
+      </>}
+      <span className="ml-1 text-xs text-muted" aria-live="polite">{Math.round(view.zoom * 100)}%</span>
+    </div>
+    <p className="mt-1 text-xs text-muted">{tx("Клавиши: + и − меняют масштаб, стрелки сдвигают схему, 0 сбрасывает.")}</p>
+    <svg viewBox={viewBox} className="mt-2 h-auto max-h-[28rem] w-full rounded-lg bg-surface" role="group" aria-label={tx("Места сектора {0}", [section.name])} onClick={onClick} onKeyDown={onKeyDown}>
       {rows.map((row) => (
         <text key={row.label} x={row.x} y={row.y} fontSize={radius * 1.8} textAnchor="middle" dominantBaseline="middle" className="pointer-events-none fill-gray-500">{row.label}</text>
       ))}
@@ -303,6 +368,7 @@ function SectionSeats({ section, seats, selected, disabled, onToggle }: {
         );
       })}
     </svg>
+    </div>
   );
 }
 

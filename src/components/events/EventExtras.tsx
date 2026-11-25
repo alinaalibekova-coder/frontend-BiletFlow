@@ -12,14 +12,14 @@ export function RequestError({ error }: { error: unknown }) {
 }
 // resolveStatus asks the calendar endpoint up front whether the event was cancelled; pass
 // `cancelled` instead when the event itself is already loaded.
-export function CalendarMenu({ eventId, cancelled = false, resolveStatus = false }: { eventId: number; cancelled?: boolean; resolveStatus?: boolean }) {
+export function CalendarMenu({ eventId, cancelled = false, resolveStatus = false, className = "my-3" }: { eventId: number; cancelled?: boolean; resolveStatus?: boolean; className?: string }) {
   const { tx } = useLanguage();
   const [open, setOpen] = useState(false);
   const links = useQuery({ queryKey: ["calendar", eventId], queryFn: () => getCalendar(eventId), enabled: !cancelled && (open || resolveStatus), retry: false });
   const download = useMutation({ mutationFn: async () => downloadBlob(await downloadCalendar(eventId), `event-${eventId}.ics`) });
-  if (cancelled || links.data?.cancelled) return <div className="my-3"><Button variant="secondary" disabled={download.isPending} onClick={() => download.mutate()} className="inline-flex items-center gap-2"><Icon name="download" className="h-4 w-4" />{tx("Скачать отмену события (.ics)")}</Button><RequestError error={download.error} /></div>;
+  if (cancelled || links.data?.cancelled) return <div className={className}><Button variant="secondary" disabled={download.isPending} onClick={() => download.mutate()} className="inline-flex items-center gap-2"><Icon name="download" className="h-4 w-4" />{tx("Скачать отмену события (.ics)")}</Button><RequestError error={download.error} /></div>;
   const chip = "inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold hover:border-primary hover:bg-primary-soft hover:text-primary-dark";
-  return <div className="my-3"><Button variant="secondary" onClick={() => setOpen(!open)} aria-expanded={open} className="inline-flex items-center gap-2"><Icon name="calendar" className="h-4 w-4" />{tx("Добавить в календарь")}<Icon name="chevronDown" className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} /></Button>{open && <div className="mt-2 text-sm">
+  return <div className={className}><Button variant="secondary" onClick={() => setOpen(!open)} aria-expanded={open} className="inline-flex items-center gap-2"><Icon name="calendar" className="h-4 w-4" />{tx("Добавить в календарь")}<Icon name="chevronDown" className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} /></Button>{open && <div className="mt-2 text-sm">
     {links.isLoading && <p>{tx("Загрузка…")}</p>}
     <RequestError error={links.error || download.error} />
     {links.data && !links.data.cancelled && <div role="group" aria-label={tx("Добавить в календарь")} className="flex flex-wrap gap-2">
