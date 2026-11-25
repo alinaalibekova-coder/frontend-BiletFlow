@@ -1,4 +1,5 @@
 import { getAdminEvents } from "../api/platform";
+import { KpiCard } from "../components/ui/KpiCard";
 import { CalendarMenu } from "../components/events/EventExtras";
 import { CheckInResultCard } from "../components/checkin/CheckInResultCard";
 import { CameraScanner } from "../components/checkin/CameraScanner";
@@ -416,7 +417,7 @@ function OrderCard({ order, pending, error, onCancel }: { order: Order; pending:
       <ul className="mt-3 space-y-1 text-sm text-muted">
         {order.items.map((item, index) => <li key={item.seatId ?? `${item.ticketTypeId}-${index}`}>{item.seatLabel ? `${item.ticketTypeName} · ${item.seatLabel}${item.quantity > 1 ? ` × ${item.quantity}` : ""}` : `${item.ticketTypeName} × ${item.quantity}`}</li>)}
       </ul>
-      <p className="mt-3 text-sm">{tx("Статус: ")}{statusLabel(order.status)}</p>
+      <p className="mt-3 flex items-center gap-2 text-sm">{tx("Статус: ")}<StatusBadge status={order.status} /></p>
             {order.status === "REFUNDED" && <OrderRefundInfo orderId={order.id} />}
       <Link to={`/orders/${order.id}`} className="mt-3 inline-block text-sm font-semibold underline">{tx("Открыть заказ")}</Link>
       {order.status === "PENDING" && <Button variant="secondary" className="ml-3" disabled={pending} onClick={onCancel}>{tx("Отменить заказ")}</Button>}
@@ -434,7 +435,7 @@ function OrderRefundInfo({ orderId }: { orderId: number }) {
   return (
     <div className="mt-2 rounded-lg bg-surface p-3 text-sm">
       <p>
-        {tx("Возврат: ")}<strong>{formatPrice(refund.amount, locale)}</strong> · {statusLabel(refund.status)}
+        {tx("Возврат: ")}<strong>{formatPrice(refund.amount, locale)}</strong> <StatusBadge status={refund.status} />
         {refund.completedAt ? ` · ${formatDateTime(refund.completedAt, locale)}` : ""}
       </p>
       {refund.reason && <p className="mt-1 text-muted">{tx("Причина: ")}{refund.reason}</p>}
@@ -663,8 +664,8 @@ export function EventCheckInPage() {
           {stats.error ? <ErrorPanel error={stats.error} retry={() => { void stats.refetch(); }} /> : stats.data && (
             <div className="grid gap-3 sm:grid-cols-3">
               <Metric label={tx("Зарегистрировано")} value={stats.data.registered} />
-              <Metric label={tx("Прошли check-in")} value={stats.data.checkedIn} />
-              <Metric label={tx("Ещё не прошли")} value={stats.data.notCheckedIn} />
+              <Metric icon="check" label={tx("Прошли check-in")} value={stats.data.checkedIn} />
+              <Metric icon="clock" label={tx("Ещё не прошли")} value={stats.data.notCheckedIn} />
             </div>
           )}
 
@@ -713,7 +714,7 @@ function AttendeeRow({ ticket, pending, onCheckIn, onUndo }: { ticket: Ticket; p
       <div>
         <p className="font-medium">{ticket.attendeeName ?? ticket.attendeeEmail}</p>
         <p className="text-xs text-muted">{ticket.attendeeEmail}</p>
-        <p className="text-sm text-muted">{ticket.ticketTypeName}{ticket.seatLabel ? ` · ${ticket.seatLabel}` : ""} {tx(" · Билет №")}{ticket.id} · {statusLabel(ticket.status)}</p>
+        <p className="text-sm text-muted">{ticket.ticketTypeName}{ticket.seatLabel ? ` · ${ticket.seatLabel}` : ""} {tx(" · Билет №")}{ticket.id} <StatusBadge status={ticket.status} /></p>
         {ticket.usedAt && <p className="text-xs text-muted">{tx("Отмечен: ")}{formatDateTime(ticket.usedAt, locale)}</p>}
       </div>
       {ticket.status === "VALID" && <Button disabled={pending} onClick={onCheckIn}>{tx("Отметить проход")}</Button>}
@@ -812,7 +813,7 @@ export function PlatformAdminPage() {
               <article key={event.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
                 <div>
                   <p className="font-semibold">{event.title}</p>
-                  <p className="mt-1 text-xs text-muted">ID {event.id} · {statusLabel(event.status)}{event.suspended ? tx(" · Приостановлено") : ""}</p>
+                  <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">ID {event.id} <StatusBadge status={event.status ?? "PUBLISHED"} />{event.suspended && <StatusBadge status="SUSPENDED" />}</p>
                   {event.suspensionReason && <p className="mt-1 text-sm text-red-700">{tx("Причина: ")}{event.suspensionReason}</p>}
                 </div>
                 {event.suspended ? (
@@ -937,9 +938,9 @@ function AdminUserCard({ user, pending, onDelete }: { user: User; pending: boole
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({ label, value, icon = "users" }: { label: string; value: number; icon?: "users" | "check" | "clock" }) {
   const { tx, locale } = useLanguage();
-  return <div className="rounded-xl bg-surface p-4"><p className="text-xs text-muted">{tx(label)}</p><p className="mt-1 text-xl font-bold">{value.toLocaleString(locale)}</p></div>;
+  return <KpiCard icon={icon} label={tx(label)} value={value.toLocaleString(locale)} />;
 }
 
 function Pagination({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {

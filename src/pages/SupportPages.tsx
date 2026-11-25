@@ -1,4 +1,5 @@
 import { formatDateTime } from "../lib/format";
+import { StatusBadge } from "../components/ui/StatusBadge";
 import { useLanguage } from "../i18n/LanguageContext";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -142,7 +143,7 @@ function CaseOrdersPanel({ eventId, requesterEmail, orderId }: { eventId: number
     {rows.map(order => <article key={order.id} className="rounded-lg bg-surface p-3 text-sm">
       <div className="flex flex-wrap justify-between gap-2">
         <strong>{tx("Заказ №")}{order.id}</strong>
-        <span>{formatPrice(order.totalAmount, locale)} · {statusLabel(order.status)}</span>
+        <span className="flex items-center gap-2">{formatPrice(order.totalAmount, locale)} <StatusBadge status={order.status} /></span>
       </div>
       <p className="mt-1 text-xs text-muted">{formatDateTime(order.createdAt, locale)}</p>
       <ul className="mt-2 text-xs">{order.items.map(i => <li key={i.ticketTypeId}>{i.ticketTypeName} × {i.quantity}</li>)}</ul>

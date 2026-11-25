@@ -1,8 +1,9 @@
 import { getSeatingLayouts } from "../api/seating";
+import { Icon, type IconName } from "../components/ui/Icons";
 import { getAdminEvents } from "../api/platform";
 import { useLanguage } from "../i18n/LanguageContext";
-import { useState, type FormEvent, type ReactNode } from "react";
-import { Link, NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createEvent,
@@ -242,38 +243,56 @@ function AccessMessage({ title, detail, action }: { title: string; detail: strin
 export function OrganizerDashboardLayout() {
   const { tx } = useLanguage();
   const base = useDashboardBase();
+  const { pathname } = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => setMenuOpen(false), [pathname]);
   const platformAdmin = base === "/admin/dashboard";
-  const tabs = [
-    ...(platformAdmin ? [{ to: `${base}/overview`, label: tx("Обзор платформы") }, ...[["orders", "Заказы"], ["payments", "Платежи"], ["refunds", "Возвраты"], ["campaigns", "Промокампании"], ["reports", "Жалобы на события"], ["settings", "Настройки платформы"], ["venues", "Схемы площадок"]].map(([path,label]) => ({ to: `${base}/${path}`, label: tx(label) }))] : []),
-    { to: `${base}/payouts`, label: tx("Выплаты") },
-    { to: `${base}/events`, label: platformAdmin ? tx("Все мероприятия") : tx("Мои мероприятия") },
-    ...(!platformAdmin ? [{ to: `${base}/create`, label: tx("Создать мероприятие") }] : []),
-    { to: `${base}/manage`, label: tx("Управление") },
-    { to: `${base}/sales`, label: tx("Продажи") },
-    ...(platformAdmin ? [{ to: `${base}/verification`, label: tx("Заявки организаторов") }, { to: `${base}/activations`, label: tx("Платные продажи") }, { to: `${base}/support`, label: tx("Эскалации") }] : [{ to: "/support", label: tx("Поддержка") }]),
-    { to: "/staff", label: tx("Check-in") },
+  const tabs: { to: string; label: string; icon: IconName }[] = [
+    ...(platformAdmin ? [{ to: `${base}/overview`, label: tx("Обзор платформы"), icon: "chart" as IconName }, ...([["orders", "Заказы", "ticket"], ["payments", "Платежи", "wallet"], ["refunds", "Возвраты", "undo"], ["campaigns", "Промокампании", "sparkle"], ["reports", "Жалобы на события", "flag"], ["settings", "Настройки платформы", "settings"], ["venues", "Схемы площадок", "map"]] as const).map(([path, label, icon]) => ({ to: `${base}/${path}`, label: tx(label), icon: icon as IconName }))] : []),
+    { to: `${base}/payouts`, label: tx("Выплаты"), icon: "briefcase" },
+    { to: `${base}/events`, label: platformAdmin ? tx("Все мероприятия") : tx("Мои мероприятия"), icon: "calendar" },
+    ...(!platformAdmin ? [{ to: `${base}/create`, label: tx("Создать мероприятие"), icon: "sparkle" as IconName }] : []),
+    { to: `${base}/manage`, label: tx("Управление"), icon: "settings" },
+    { to: `${base}/sales`, label: tx("Продажи"), icon: "chart" },
+    ...(platformAdmin ? [{ to: `${base}/verification`, label: tx("Заявки организаторов"), icon: "shield" as IconName }, { to: `${base}/activations`, label: tx("Платные продажи"), icon: "wallet" as IconName }, { to: `${base}/support`, label: tx("Эскалации"), icon: "help" as IconName }] : [{ to: "/support", label: tx("Поддержка"), icon: "help" as IconName }]),
+    { to: "/staff", label: tx("Check-in"), icon: "scan" },
   ];
+  const navLabel = platformAdmin ? tx("Разделы панели администратора") : tx("Разделы кабинета организатора");
 
   return (
-    <section>
-      <div className="mb-6">
-        <p className="text-sm text-muted">{platformAdmin ? tx("Панель платформенного администратора") : tx("Кабинет организатора")}</p>
-        <h1 className="mt-1 text-2xl font-bold">{platformAdmin ? tx("Управление всеми мероприятиями") : tx("Управление событиями")}</h1>
+    <section className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+      <aside className="lg:sticky lg:top-4 lg:self-start">
+        <div className="rounded-[var(--radius-card)] bg-ink p-4 text-white shadow-lifted">
+          <p className="text-xs font-semibold uppercase tracking-wide text-white/70">{platformAdmin ? tx("Панель платформенного администратора") : tx("Кабинет организатора")}</p>
+          <p className="mt-1 text-lg font-bold leading-snug">{platformAdmin ? tx("Управление всеми мероприятиями") : tx("Управление событиями")}</p>
+          <button type="button" aria-expanded={menuOpen} aria-controls="dashboard-nav" onClick={() => setMenuOpen(open => !open)}
+            className="mt-3 flex min-h-10 w-full items-center justify-between rounded-lg bg-white/10 px-3 text-sm font-semibold hover:bg-white/20 lg:hidden">
+            <span className="flex items-center gap-2"><Icon name="menu" className="h-4 w-4" />{navLabel}</span>
+            <Icon name="chevronDown" className={`h-4 w-4 transition-transform ${menuOpen ? "rotate-180" : ""}`} />
+          </button>
+        </div>
+        <nav id="dashboard-nav" aria-label={navLabel} className={`${menuOpen ? "block" : "hidden"} mt-3 rounded-[var(--radius-card)] border border-gray-200 bg-white p-2 shadow-soft lg:block`}>
+          <ul className="space-y-0.5">
+            {tabs.map((tab) => (
+              <li key={tab.to}>
+                <NavLink
+                  to={tab.to}
+                  className={({ isActive }) =>
+                    `flex min-h-10 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold ${isActive ? "bg-primary text-white" : "text-brand hover:bg-primary-soft hover:text-primary-dark"}`
+                  }
+                >
+                  <Icon name={tab.icon} className="h-4 w-4" />
+                  {tab.label}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </aside>
+      <div className="min-w-0">
+        <h1 className="sr-only">{platformAdmin ? tx("Управление всеми мероприятиями") : tx("Управление событиями")}</h1>
+        <Outlet />
       </div>
-      <nav aria-label={platformAdmin ? tx("Разделы панели администратора") : tx("Разделы кабинета организатора")} className="mb-6 flex gap-2 overflow-x-auto border-b pb-3">
-        {tabs.map((tab) => (
-          <NavLink
-            key={tab.to}
-            to={tab.to}
-            className={({ isActive }) =>
-              `whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold ${isActive ? "bg-primary text-white" : "bg-surface hover:bg-gray-200"}`
-            }
-          >
-            {tab.label}
-          </NavLink>
-        ))}
-      </nav>
-      <Outlet />
     </section>
   );
 }

@@ -17,6 +17,7 @@ await build({ stdin: { contents: `
   import { EventSalesDetail } from './src/pages/OrganizerInsightsPage';
   import { EventSuspensionDialog } from './src/components/events/EventSuspensionDialog';
   import { ConfirmDialog } from './src/components/ui/ConfirmDialog';
+  import { EventAttendancePanel } from './src/components/analytics/EventAttendancePanel';
   import { DateStrip } from './src/components/events/DateStrip';
   export function renderConfirm(props) {
     return renderToString(React.createElement(ConfirmDialog, { open: true, onConfirm() {}, onCancel() {}, ...props }));
@@ -30,6 +31,13 @@ await build({ stdin: { contents: `
   export { readEventForm } from './src/pages/OrganizerPage';
   export { ApiError } from './src/api/client';
   import { EventSalesAnalytics } from './src/components/analytics/SalesInsights';
+  export async function renderAttendance(eventId, data) {
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
+    client.setQueryData(['event-attendance', eventId, null, 15], data);
+    const html = renderToString(React.createElement(QueryClientProvider, { client }, React.createElement(EventAttendancePanel, { eventId })));
+    client.clear();
+    return html;
+  }
   export async function renderAnalytics(eventId, seeds) {
     const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
     for (const [key,value] of seeds) client.setQueryData(key,value);
@@ -84,7 +92,7 @@ await build({ stdin: { contents: `
     return html;
   }
 `, resolveDir: process.cwd() }, bundle: true, packages: "external", platform: "node", format: "esm", outfile });
-const { ApiError, renderConfirm, renderDateStrip, renderRoute, renderSalesDetail, renderSuspensionDialog, renderSeatMap, renderOrderItems, renderCheckInResult, readEventForm, renderAnalytics } = await import(pathToFileURL(outfile));
+const { renderAttendance, ApiError, renderConfirm, renderDateStrip, renderRoute, renderSalesDetail, renderSuspensionDialog, renderSeatMap, renderOrderItems, renderCheckInResult, readEventForm, renderAnalytics } = await import(pathToFileURL(outfile));
 const attendee = { id: 2, email: "attendee@test.invalid", role: "ATTENDEE", verificationStatus: true };
 const organizer = { ...attendee, id: 1, role: "ORGANIZER" };
 const admin = { ...attendee, id: 9, role: "PLATFORM_ADMIN" };
@@ -173,9 +181,13 @@ test("attendee cannot open organizer or admin-only pages", async () => {
 });
 test("sales details render populated LocalDate daily statistics without a blank page", async () => {
   const html = renderSalesDetail({ revenue: 10000, paidOrders: 2, cancelledOrders: 0, expiredOrders: 0, discounts: 2000, netRevenue: 8000, processingFees: 200, estimatedPayout: 7800, salesByDay: [{ date: "2026-11-12", revenue: 5000, ticketsSold: 1 }, { date: "2026-11-13", revenue: 5000, ticketsSold: 1 }] });
-  assert.match(html, /12 ноября 2026/);
-  assert.match(html, /13 ноября 2026/);
+  // Axis labels show day and month; the full dates are in the table view (and the chart summary).
+  assert.match(html, />12 ноября</);
+  assert.match(html, />13 ноября</);
+  assert.match(html, /\(12 ноября 2026\)/);
+  assert.doesNotMatch(html, /Invalid Date|NaN/);
   assert.match(html, /Продажи по дням/);
+  assert.match(html, /aria-pressed="false"[^>]*>Показать таблицей</);
 });
 test("event suspension has an in-page reason form, length limit and explicit confirmation", async () => {
   const html = renderSuspensionDialog();
@@ -873,4 +885,27 @@ test("seat maps colour sections by price with a legend, zoom controls and a runn
   assert.match(html, /aria-label="Приблизить"/);
   assert.match(html, /Сумма за места: 4[\s ]000 ₸/);
   assert.match(html, /Выбранные места · 2/);
+});
+test("sales details use KPI cards and an SVG chart for ticket types", () => {
+  const html = renderSalesDetail({ revenue: 10000, paidOrders: 2, cancelledOrders: 0, expiredOrders: 0, discounts: 0, netRevenue: 10000, processingFees: 0, estimatedPayout: 10000, salesByDay: [{ date: "2026-11-12", revenue: 5000, ticketsSold: 1 }],
+    ticketTypes: [{ ticketTypeId: 1, name: "VIP", price: 5000, hidden: false, quantity: 10, sold: 2, reserved: 1, available: 7, revenue: 10000 }] }).replace(/<!-- -->/g, "");
+  assert.match(html, /<svg[^>]*role="img"[^>]*aria-label="Выручка по дням: 1 дней/);
+  assert.match(html, /<path d="M[^"]*Q[^"]*Z" fill="#534ab7"/);
+  assert.match(html, /Продажи по типам билетов/);
+  assert.match(html, /Продано: 2 · 20%/);
+  assert.match(html, /background:#f47230/);
+  assert.match(html, /rounded-xl bg-primary-soft text-primary/);
+});
+test("the dashboard has a labelled sidebar that collapses on small screens", async () => {
+  const html = await renderRoute("/organizer/events", organizer, [[["organizer-profile", "ORGANIZER"], { userId: 1 }], [["organizer-events", 1, 0], page([event])]]);
+  assert.match(html, /aria-expanded="false" aria-controls="dashboard-nav"/);
+  assert.match(html, /<nav id="dashboard-nav" aria-label="Разделы кабинета организатора" class="hidden[^"]*lg:block"/);
+  assert.match(html, /data-status="PUBLISHED"|Опубликовано/);
+});
+test("attendance shows check-in share as a labelled donut with counts", async () => {
+  const html = (await renderAttendance(7, { eventId: 7, eventTitle: "Jazz", phase: "ACTIVE", ticketHolders: 40, checkedIn: 30, absent: 10, checkInRate: 75, undoneCheckIns: 0, ticketTypes: [], arrivals: [], intervalMinutes: 15 })).replace(/<!-- -->/g, "");
+  assert.match(html, /role="img" aria-label="Прошли check-in: 30 из 40 \(75%\)"/);
+  assert.match(html, /stroke-dasharray="75 100"/);
+  assert.match(html, />75%</);
+  assert.match(html, /Ещё не пришли: <strong>10</);
 });

@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { KpiCard } from "../ui/KpiCard";
 import { useQuery } from "@tanstack/react-query";
 import { getCampaigns } from "../../api/commerce";
 import { getTicketTypes } from "../../api/events";
@@ -14,7 +15,7 @@ export function InventoryMetrics({ capacity, ticketsRemaining, percentSold }: { 
   const number = (value?: number | null) => value == null ? tx("Нет данных") : value.toLocaleString(locale);
   return <section className="my-4">
     <div className="grid gap-3 sm:grid-cols-3">
-      {[[tx("Вместимость"), capacity == null ? tx("Не задана") : number(capacity)], [tx("Остаток вместимости"), number(ticketsRemaining)], [tx("Продано мест, %"), percentSold == null ? tx("Нет данных") : `${percentSold.toLocaleString(locale, { maximumFractionDigits: 1 })}%`]].map(([label,value]) => <div key={label} className="rounded-xl bg-surface p-4"><p className="text-xs text-muted">{label}</p><p className="mt-1 text-xl font-bold">{value}</p></div>)}
+      {([[tx("Вместимость"), capacity == null ? tx("Не задана") : number(capacity), "users"], [tx("Остаток вместимости"), number(ticketsRemaining), "ticket"], [tx("Продано мест, %"), percentSold == null ? tx("Нет данных") : `${percentSold.toLocaleString(locale, { maximumFractionDigits: 1 })}%`, "chart"]] as const).map(([label, value, icon]) => <KpiCard key={label} icon={icon} label={label} value={value} />)}
     </div>
     <p className="mt-2 text-xs text-muted">{tx("Резерв учтён. Ограничения секторов могут уменьшать доступность билетов.")}</p>
   </section>;
