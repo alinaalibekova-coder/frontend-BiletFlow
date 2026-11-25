@@ -759,3 +759,23 @@ test("staff check-in focuses the code field and offers optional camera scanning"
   assert.match(html, /<input[^>]*autofocus=""[^>]*aria-label="Код билета"|<input[^>]*aria-label="Код билета"[^>]*autofocus=""/i);
   assert.match(html, /aria-expanded="false"[^>]*>Сканировать камерой</);
 });
+
+// ---- Redesign (phase 3) ----
+test("the header groups account and role links in a collapsed, labelled user menu", async () => {
+  const html = await renderRoute("/", admin, [...catalogSeeds, [["unread-notifications", admin.id], { unread: 3 }]]);
+  assert.match(html, /aria-label="BiletFlow"/);
+  const button = html.match(/<button[^>]*aria-expanded="false"[^>]*aria-controls="([^"]+)"/);
+  assert.ok(button, "menu button");
+  assert.match(html, new RegExp(`id="${button[1]}" hidden=""`));
+  for (const href of ["/account", "/account/settings", "/notifications", "/support", "/admin/dashboard", "/admin/users"]) assert.match(html, new RegExp(`href="${href}"`));
+  assert.match(html, /aria-label="Уведомления: непрочитанных 3"/);
+  const guest = await renderRoute("/", null, catalogSeeds);
+  assert.match(guest, />Войти</);
+  assert.doesNotMatch(guest, /aria-controls=/);
+});
+test("category chips have icons and mark the active category without relying on colour", async () => {
+  const html = await renderRoute("/?category=MUSIC", null, catalogSeeds);
+  const nav = html.match(/<nav aria-label="Категории"[\s\S]*?<\/nav>/)?.[0] ?? "";
+  assert.match(nav, /aria-current="page"[^>]*>(<svg[\s\S]*?<\/svg>)?Музыка/);
+  assert.equal((nav.match(/<svg/g) ?? []).length, (nav.match(/<li/g) ?? []).length);
+});
