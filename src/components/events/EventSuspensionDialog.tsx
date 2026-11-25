@@ -22,7 +22,6 @@ export function EventSuspensionDialog({ event, pending, error, onConfirm, onClos
   };
 
   return <Modal open onClose={close} title={tx("Приостановить мероприятие")}>
-    <h2 className="pr-5 text-xl font-bold">{tx("Приостановить мероприятие")}</h2>
     <p className="mt-3 break-words text-sm font-semibold">{event.title}</p>
     <p className="mt-2 text-sm text-muted">{tx("Мероприятие будет скрыто от посетителей. Новые заказы и оплаты остановятся, неоплаченные заказы отменятся. Уже проданные билеты сохранятся.")}</p>
     <form onSubmit={submit} className="mt-4 space-y-3">

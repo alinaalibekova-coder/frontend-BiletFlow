@@ -9,6 +9,8 @@ export function RequestError({ error }: { error: unknown }) {
   const { tx } = useLanguage();
   return error ? <p role="alert" className="my-2 text-sm text-red-700">{typeof error === "string" ? tx(error) : error instanceof Error ? tx(error.message) : tx("Ошибка сервера. Попробуйте позже.")}</p> : null;
 }
+// resolveStatus asks the calendar endpoint up front whether the event was cancelled; pass
+// `cancelled` instead when the event itself is already loaded.
 export function CalendarMenu({ eventId, cancelled = false, resolveStatus = false }: { eventId: number; cancelled?: boolean; resolveStatus?: boolean }) {
   const { tx } = useLanguage();
   const [open, setOpen] = useState(false);

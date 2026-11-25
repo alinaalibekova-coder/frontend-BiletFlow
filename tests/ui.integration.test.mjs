@@ -16,10 +16,19 @@ await build({ stdin: { contents: `
   import App from './src/App';
   import { EventSalesDetail } from './src/pages/OrganizerInsightsPage';
   import { EventSuspensionDialog } from './src/components/events/EventSuspensionDialog';
+  import { ConfirmDialog } from './src/components/ui/ConfirmDialog';
+  import { DateStrip } from './src/components/events/DateStrip';
+  export function renderConfirm(props) {
+    return renderToString(React.createElement(ConfirmDialog, { open: true, onConfirm() {}, onCancel() {}, ...props }));
+  }
+  export function renderDateStrip() {
+    return renderToString(React.createElement(DateStrip, { selected: null, onSelect() {} }));
+  }
   import { SeatMapPicker } from './src/components/events/SeatMapPicker';
   import { OrderItemsList } from './src/components/orders/OrderItemsList';
   import { CheckInResultCard } from './src/components/checkin/CheckInResultCard';
   export { readEventForm } from './src/pages/OrganizerPage';
+  export { ApiError } from './src/api/client';
   import { EventSalesAnalytics } from './src/components/analytics/SalesInsights';
   export async function renderAnalytics(eventId, seeds) {
     const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
@@ -75,7 +84,7 @@ await build({ stdin: { contents: `
     return html;
   }
 `, resolveDir: process.cwd() }, bundle: true, packages: "external", platform: "node", format: "esm", outfile });
-const { renderRoute, renderSalesDetail, renderSuspensionDialog, renderSeatMap, renderOrderItems, renderCheckInResult, readEventForm, renderAnalytics } = await import(pathToFileURL(outfile));
+const { ApiError, renderConfirm, renderDateStrip, renderRoute, renderSalesDetail, renderSuspensionDialog, renderSeatMap, renderOrderItems, renderCheckInResult, readEventForm, renderAnalytics } = await import(pathToFileURL(outfile));
 const attendee = { id: 2, email: "attendee@test.invalid", role: "ATTENDEE", verificationStatus: true };
 const organizer = { ...attendee, id: 1, role: "ORGANIZER" };
 const admin = { ...attendee, id: 9, role: "PLATFORM_ADMIN" };
@@ -580,12 +589,16 @@ test("paid confirmation offers calendar actions while pending confirmation does 
 test("ticket cancellation and refund do not imply event cancellation; calendar metadata decides", async () => {
   const ticket = { id:5,eventId:7,eventTitle:"Jazz",ticketTypeName:"Standard",attendeeEmail:attendee.email,orderId:42,status:"REFUNDED" };
   const seeds = [[["my-orders",0],page([])],[["my-tickets",0],page([ticket])]];
-  const active = await renderRoute("/account?lang=en",attendee,[...seeds,[["calendar",7],{ cancelled:false }]]);
+  // The refunded ticket's event is still on: the loaded event decides, no calendar request needed.
+  const active = await renderRoute("/account?lang=en",attendee,[...seeds,[["event",7],event]]);
   assert.match(active,/Add to calendar/);
   assert.doesNotMatch(active,/Download event cancellation/);
-  const cancelled = await renderRoute("/account?lang=en",attendee,[...seeds,[["calendar",7],{ cancelled:true }]]);
+  const cancelled = await renderRoute("/account?lang=en",attendee,[...seeds,[["event",7],{ ...event, status:"CANCELLED" }]]);
   assert.match(cancelled,/Download event cancellation \(.ics\)/);
   assert.doesNotMatch(cancelled,/Add to calendar/);
+  // A cancelled event is no longer public (404): then the calendar endpoint tells.
+  const hidden = await renderRoute("/account?lang=en",attendee,[...seeds,[["calendar",7],{ cancelled:true }]],undefined,{ errorSeeds:[[["event",7],new ApiError(404,"Not found")]] });
+  assert.match(hidden,/Download event cancellation \(.ics\)/);
 });
 
 test("sales analytics include real filter controls, server inventory metrics and all-time campaign attribution", async () => {
@@ -688,4 +701,61 @@ test("event cards match the event page when the server minPrice is null", async 
   assert.match(html, /Билеты не требуются/);
   assert.match(html, /Билеты пока недоступны/);
   assert.match(html, /от 2[\s ]500 ₸/);
+});
+
+// ---- Accessibility and SRS gaps (phase 2) ----
+test("ConfirmDialog is a labelled alert dialog with verb-first destructive actions", () => {
+  const html = renderConfirm({ title: "Отменить заказ №42?", message: "Билеты вернутся в продажу.", confirmLabel: "Отменить заказ", cancelLabel: "Оставить заказ", destructive: true });
+  assert.match(html, /role="alertdialog"/);
+  const labelledBy = html.match(/aria-labelledby="([^"]+)"/)?.[1];
+  assert.ok(labelledBy);
+  assert.match(html, new RegExp(`<h2 id="${labelledBy}"[^>]*>Отменить заказ №42\\?</h2>`));
+  assert.match(html, /bg-red-700[^>]*>Отменить заказ</);
+  assert.match(html, />Оставить заказ</);
+  const en = renderConfirm({ title: "T", confirmLabel: "OK" });
+  assert.match(en, />Отмена</);
+});
+test("modal dialogs are labelled by their visible heading", () => {
+  const html = renderSuspensionDialog();
+  const labelledBy = html.match(/role="dialog"[^>]*aria-labelledby="([^"]+)"/)?.[1];
+  assert.ok(labelledBy);
+  assert.match(html, new RegExp(`id="${labelledBy}"[^>]*>Приостановить мероприятие<`));
+  assert.equal((html.match(/Приостановить мероприятие</g) ?? []).length, 1);
+});
+test("no window.confirm and no sub-12px text remain in the app", () => {
+  for (const root of ["src/pages", "src/components"]) {
+    for (const name of fs.readdirSync(root, { recursive: true }).filter(name => name.endsWith(".tsx"))) {
+      const source = fs.readFileSync(path.join(root, name), "utf8");
+      assert.doesNotMatch(source, /window\.confirm\(/, name);
+      assert.doesNotMatch(source, /text-\[1[01]px\]/, name);
+    }
+  }
+});
+test("weekend dates use a colour that passes contrast", () => {
+  const html = renderDateStrip();
+  assert.doesNotMatch(html, /text-orange-500|text-\[10px\]/);
+  assert.match(html, /text-orange-700/);
+});
+test("the home page has exactly one h1 with or without filters", async () => {
+  for (const url of ["/", "/?q=jazz", "/?category=MUSIC&date=2027-12-10"]) {
+    const html = await renderRoute(url, null, catalogSeeds);
+    assert.equal((html.match(/<h1[\s>]/g) ?? []).length, 1, url);
+  }
+});
+test("my tickets show event date, time and venue before the calendar menu", async () => {
+  const html = (await renderRoute("/account", attendee, [[["my-orders", 0], page([])], [["my-tickets", 0], page([{ id: 5, eventId: 7, eventTitle: "Jazz", ticketTypeName: "Standard", status: "VALID", attendeeEmail: attendee.email, orderId: 42 }])],
+    [["event", 7], { ...event, venue: { id: 1, name: "Hall A", address: "Астана, Абая 1" } }]])).replace(/<!-- -->/g, "");
+  assert.match(html, /10 декабря 2027, 18:00/);
+  assert.match(html, /Hall A, Астана, Абая 1/);
+  assert.ok(html.indexOf("Hall A") < html.indexOf("Добавить в календарь"));
+  assert.ok(html.indexOf("Билет №5") < html.indexOf("Добавить в календарь"));
+});
+test("staff check-in focuses the code field and offers optional camera scanning", async () => {
+  const html = await renderRoute("/staff", organizer, [
+    [["assigned-events"], page([event])],
+    [["check-in-stats", 7], { eventId: 7, registered: 0, checkedIn: 0, notCheckedIn: 0 }],
+    [["event-attendees", 7, "", 0], page([])],
+  ]);
+  assert.match(html, /<input[^>]*autofocus=""[^>]*aria-label="Код билета"|<input[^>]*aria-label="Код билета"[^>]*autofocus=""/i);
+  assert.match(html, /aria-expanded="false"[^>]*>Сканировать камерой</);
 });

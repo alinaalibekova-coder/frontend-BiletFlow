@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { getAllEvents, getEvent, getTicketTypes } from "../api/events";
 import { parseDate } from "../lib/format";
+import { ApiError } from "../api/client";
 import type { Event, TicketType } from "../api/types";
 
 // Only events attendees should see: published and public.
@@ -28,6 +29,18 @@ export function useEvent(id: number) {
     queryKey: ["event", id],
     queryFn: () => getEvent(id),
     enabled: Number.isFinite(id),
+  });
+}
+
+// Event details for a ticket card. Same query key as the event page, so several tickets of one
+// event share one request. A cancelled event is no longer public (404): don't retry that.
+export function useTicketEvent(id: number) {
+  return useQuery({
+    queryKey: ["event", id],
+    queryFn: () => getEvent(id),
+    enabled: Number.isFinite(id),
+    staleTime: 5 * 60 * 1000,
+    retry: (failures, error) => !(error instanceof ApiError && error.status === 404) && failures < 2,
   });
 }
 

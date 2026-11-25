@@ -40,6 +40,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Button, buttonClass } from "../components/ui/Button";
 import { BecomeOrganizerForm } from "../components/auth/BecomeOrganizerForm";
 import { Modal } from "../components/ui/Modal";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { EventPoster } from "../components/events/EventPoster";
 import { EventSuspensionDialog } from "../components/events/EventSuspensionDialog";
 import { formatTicketSalesEnd, getEventTicketSaleState, getTicketSaleState } from "../lib/ticketSales";
@@ -416,6 +417,7 @@ function PosterManager({ event }: { event: Event }) {
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [validationError, setValidationError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const invalidateEvent = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["event", event.id] }),
@@ -447,6 +449,16 @@ function PosterManager({ event }: { event: Event }) {
 
   return (
     <section className="space-y-4 rounded-xl border p-5">
+      <ConfirmDialog
+        open={confirmDelete}
+        title={tx("Удалить постер этого события?")}
+        message={tx("Посетители увидят обложку-заглушку, пока вы не загрузите новый постер.")}
+        confirmLabel={tx("Удалить постер")}
+        cancelLabel={tx("Оставить постер")}
+        destructive
+        onConfirm={() => { deleteMutation.mutate(); setConfirmDelete(false); }}
+        onCancel={() => setConfirmDelete(false)}
+      />
       <div>
         <h3 className="font-semibold">{tx("Постер события")}</h3>
         <p className="mt-1 text-sm text-muted">{tx("JPEG, PNG или WebP, не более 5 МБ.")}</p>
@@ -499,9 +511,7 @@ function PosterManager({ event }: { event: Event }) {
                 type="button"
                 variant="secondary"
                 disabled={isPending}
-                onClick={() => {
-                  if (window.confirm(tx("Удалить постер этого события?"))) deleteMutation.mutate();
-                }}
+                onClick={() => setConfirmDelete(true)}
               >
                 {deleteMutation.isPending ? tx("Удаляем…") : tx("Удалить постер")}
               </Button>
@@ -1325,6 +1335,7 @@ export function ManageOrganizerEventsPage() {
   const [phase, setPhase] = useState<EventPhase | "">("");
   const { profile, events, platformAdmin } = useOrganizerEvents(page, phase || undefined);
   const [actionError, setActionError] = useState("");
+  const [cancelTarget, setCancelTarget] = useState<{ id: number; title: string } | null>(null);
   const duplication = useMutation({
     mutationFn: (eventId: number) => duplicateEvent(eventId),
     onSuccess: async (copy) => {
@@ -1390,6 +1401,16 @@ export function ManageOrganizerEventsPage() {
 
   return (
     <QueryState loading={(!platformAdmin && profile.isLoading) || events.isLoading} error={(platformAdmin ? null : profile.error) ?? events.error} onRetry={retry}>
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        title={tx("Отменить событие «{0}»?", [cancelTarget?.title ?? ""])}
+        message={tx("Посетители увидят, что событие отменено. Отмену нельзя вернуть.")}
+        confirmLabel={tx("Отменить событие")}
+        cancelLabel={tx("Не отменять")}
+        destructive
+        onConfirm={() => { if (cancelTarget) mutation.mutate({ eventId: cancelTarget.id, action: "cancel" }); setCancelTarget(null); }}
+        onCancel={() => setCancelTarget(null)}
+      />
       {suspensionTarget && <EventSuspensionDialog
         key={suspensionTarget.id}
         event={suspensionTarget}
@@ -1401,9 +1422,8 @@ export function ManageOrganizerEventsPage() {
       <Modal
         open={eventPendingPublish !== null}
         onClose={() => setEventPendingPublish(null)}
-        title={tx("Опубликовать событие без билетов?")}
+        title={tx("У события нет доступных билетов")}
       >
-        <h2 className="text-xl font-bold">{tx("У события нет доступных билетов")}</h2>
         <p className="mt-3 text-sm text-muted">
           {eventPendingPublish?.title ? tx("«{0}» будет опубликовано", [eventPendingPublish.title]) : tx("Событие будет опубликовано")} {tx(" без доступных билетов. Посетители увидят событие, но пока не смогут купить билеты.")}</p>
         <div className="mt-5 flex flex-col gap-3">
@@ -1516,11 +1536,7 @@ export function ManageOrganizerEventsPage() {
                   <Button variant="secondary" disabled={mutation.isPending} onClick={() => mutation.mutate({ eventId: event.id, action: "unpublish" })}>{tx("Снять")}</Button>
                 )}
                 {!platformAdmin && event.status !== "CANCELLED" && (
-                  <Button variant="secondary" disabled={mutation.isPending} onClick={() => {
-                    if (window.confirm(tx("Отменить событие «{0}»?", [event.title]))) {
-                      mutation.mutate({ eventId: event.id, action: "cancel" });
-                    }
-                  }}>{tx("Отменить")}</Button>
+                  <Button variant="secondary" disabled={mutation.isPending} onClick={() => setCancelTarget({ id: event.id, title: event.title })}>{tx("Отменить")}</Button>
                 )}
               </div>
             </article>

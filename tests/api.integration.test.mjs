@@ -10,6 +10,7 @@ const bundle = await build({ stdin: { contents: `
   export * as sales from './src/api/sales';
   export { registrationState, nextRegistrationBoundary } from './src/lib/registration';
   export * as promo from './src/lib/promo';
+  export { looksLikeUrl } from './src/lib/checkInCode';
   export { minPrice, isBuyableNow } from './src/hooks/useEvents';
   export { formatCountdown, holdMilestone, eventVisibleUntil, eventCoversDay, formatTime, dayKey } from './src/lib/format';
   export { summarizeInventory } from './src/lib/salesInventory';
@@ -30,7 +31,7 @@ const bundle = await build({ stdin: { contents: `
   export { startOrderPayment } from './src/lib/checkout';
   export { formatPrice, parseDate, formatLongDate, formatShortDate, weekdayShort, almatyTimestamp } from './src/lib/format';
 `, resolveDir: process.cwd() }, bundle: true, platform: "node", format: "esm", write: false });
-const { nextRegistrationBoundary, promo, minPrice, isBuyableNow, formatCountdown, holdMilestone, eventVisibleUntil, eventCoversDay, formatTime, dayKey, categoryKey, categoryLabel, posterUrlThroughProxy, checkIn, orders, sales, registrationState, summarizeInventory, seating, platform, users, auth, commerce, support, notifications, events, catalog, venueForms, languageUtils, pageLanguage, client, startOrderPayment, formatPrice, parseDate, formatLongDate, formatShortDate, weekdayShort, almatyTimestamp } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+const { looksLikeUrl, nextRegistrationBoundary, promo, minPrice, isBuyableNow, formatCountdown, holdMilestone, eventVisibleUntil, eventCoversDay, formatTime, dayKey, categoryKey, categoryLabel, posterUrlThroughProxy, checkIn, orders, sales, registrationState, summarizeInventory, seating, platform, users, auth, commerce, support, notifications, events, catalog, venueForms, languageUtils, pageLanguage, client, startOrderPayment, formatPrice, parseDate, formatLongDate, formatShortDate, weekdayShort, almatyTimestamp } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
 
 let expected;
 let requests;
@@ -646,4 +647,9 @@ test("the cheapest price counts only ticket types that can be bought now", () =>
   assert.equal(minPrice([...types, { ...base, id: 6, price: 0 }], false, now), 0);
   assert.equal(isBuyableNow(types[2], true, Date.parse("2026-11-26T00:00:01+05:00")), true);
   assert.equal(minPrice(undefined), null);
+});
+
+test("campaign links are never treated as ticket codes", () => {
+  for (const value of ["https://biletflow.example/events/7?promo=abc", "HTTP://x.y/z", "  https://a.b"]) assert.equal(looksLikeUrl(value), true, value);
+  for (const value of ["T-5", "8f14e45f-ceea-467f-a0e6-5d7a0b4d1c2e", "BF.7.123", "httpcode"]) assert.equal(looksLikeUrl(value), false, value);
 });

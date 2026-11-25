@@ -9,8 +9,8 @@ export function HeroBanner({ event }: { event: Event }) {
   const { t, locale } = useLanguage();
   return (
     <section className="flex min-h-56 flex-col justify-start rounded-2xl bg-surface p-6 md:min-h-72">
-      <p className="text-[11px] font-semibold uppercase text-muted">{categoryLabel(event.category, locale)}</p>
-      <h1 className="mt-1 text-2xl font-bold md:text-3xl">{event.title}</h1>
+      <p className="text-xs font-semibold uppercase text-muted">{categoryLabel(event.category, locale)}</p>
+      <h2 className="mt-1 text-2xl font-bold md:text-3xl">{event.title}</h2>
       <p className="mt-1 text-sm font-semibold">
         {formatShortDate(event.startTime, locale)}, {formatTime(event.startTime)}
         {event.venue?.name && ` • ${event.venue.name}`}

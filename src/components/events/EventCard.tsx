@@ -32,7 +32,7 @@ export function EventCard({ event }: { event: Event }) {
     >
       <EventPoster posterUrl={event.posterUrl} className="aspect-[4/3]" />
       <div className="flex flex-1 flex-col p-3">
-        <p className="text-[11px] font-semibold uppercase text-muted">{categoryLabel(event.category, locale)}</p>
+        <p className="text-xs font-semibold uppercase text-muted">{categoryLabel(event.category, locale)}</p>
         <h3 className="mt-0.5 font-semibold leading-snug group-hover:underline">{event.title}</h3>
         <p className="mt-0.5 text-xs text-muted">
           {formatShortDate(event.startTime, locale)}

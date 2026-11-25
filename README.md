@@ -366,7 +366,15 @@ node tests/deployment.smoke.mjs
 - JWTs are stored in localStorage in this academic MVP. They are readable by same-origin JavaScript, so CSP
   reduces exposure but cannot make them equivalent to HttpOnly cookies. A cookie-based session model requires
   a backend contract and CSRF/session design; it is not silently substituted here.
-- The web staff screen supports manual ticket codes and check-in from search. A separate RN/Expo app and
-  camera-scanning compliance cannot be established from this repository. Optional GA4 is not enabled.
+- The web staff screen supports manual ticket codes, USB barcode scanners (the code field keeps focus
+  between scans), check-in from search, and optional camera scanning where the browser has the
+  `BarcodeDetector` API (feature-detected, falls back to manual entry; every camera track stops when the
+  scanner closes). nginx sends `Permissions-Policy: camera=(self)` for this. Decoded http(s) links, such as
+  a Campaign QR, are rejected without calling the scan endpoint. A separate RN/Expo app is not part of this
+  repository. Optional GA4 is not enabled.
+- Confirmations use the in-page `ConfirmDialog` (built on `Modal`: focus trap, focus restore, Escape,
+  labelled by its visible title) instead of `window.confirm`.
+- Ticket cards show event date, time and venue from the cached event query (`TicketResponse` has no
+  such fields); several tickets of one event share one request.
 - Backend work still needed: a city field for server-side catalog filtering; filtering financial sales
   totals and campaign attribution, beyond the currently filtered daily series.

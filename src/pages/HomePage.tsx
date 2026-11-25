@@ -66,7 +66,8 @@ export default function HomePage() {
       {!hasFilters && upcoming[0] && <HeroBanner event={upcoming[0]} />}
       <DateStrip selected={date} onSelect={setDate} />
 
-      <h2 className="mb-4 mt-8 text-xl font-bold">{heading}</h2>
+      {/* The page's only h1, with or without the banner and filters. */}
+      <h1 className="mb-4 mt-8 text-xl font-bold">{heading}</h1>
 
       {isLoading && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

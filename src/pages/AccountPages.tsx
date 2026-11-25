@@ -1,9 +1,11 @@
 import { getAdminEvents } from "../api/platform";
 import { CalendarMenu } from "../components/events/EventExtras";
 import { CheckInResultCard } from "../components/checkin/CheckInResultCard";
+import { CameraScanner } from "../components/checkin/CameraScanner";
+import { looksLikeUrl } from "../lib/checkInCode";
 import { UserSuspensionControls } from "../components/auth/UserSuspensionControls";
 import { useLanguage } from "../i18n/LanguageContext";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -30,9 +32,12 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "../components/ui/Button";
 import { Modal } from "../components/ui/Modal";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { EventSuspensionDialog } from "../components/events/EventSuspensionDialog";
-import { formatPrice, formatLongDate, formatDateTime } from "../lib/format";
+import { formatPrice, formatLongDate, formatDateTime, formatTime } from "../lib/format";
 import type { CheckInResult, Order, Ticket, User } from "../api/types";
+import { useTicketEvent } from "../hooks/useEvents";
+import { ApiError } from "../api/client";
 
 const PAGE_SIZE = 20;
 
@@ -42,6 +47,7 @@ export function MyAccountPage() {
   const queryClient = useQueryClient();
   const [ordersPage, setOrdersPage] = useState(0);
   const [ticketsPage, setTicketsPage] = useState(0);
+  const [cancelTarget, setCancelTarget] = useState<number | null>(null);
   const orders = useQuery({
     queryKey: ["my-orders", ordersPage],
     queryFn: () => getMyOrders(ordersPage, PAGE_SIZE),
@@ -69,6 +75,16 @@ export function MyAccountPage() {
 
   return (
     <div className="space-y-10">
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        title={tx("Отменить заказ №{0}?", [cancelTarget ?? ""])}
+        message={tx("Зарезервированные билеты вернутся в продажу. Это действие нельзя отменить.")}
+        confirmLabel={tx("Отменить заказ")}
+        cancelLabel={tx("Оставить заказ")}
+        destructive
+        onConfirm={() => { if (cancelTarget !== null) cancel.mutate(cancelTarget); setCancelTarget(null); }}
+        onCancel={() => setCancelTarget(null)}
+      />
       <section>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-bold">{tx("Мои заказы")}</h1>
@@ -84,9 +100,7 @@ export function MyAccountPage() {
                     order={order}
                     pending={cancel.isPending}
                     error={cancel.variables === order.id ? cancel.error : null}
-                    onCancel={() => {
-                      if (window.confirm(tx("Отменить заказ №{0}?", [order.id]))) cancel.mutate(order.id);
-                    }}
+                    onCancel={() => setCancelTarget(order.id)}
                   />
                 ))}
               </div>
@@ -350,9 +364,8 @@ export function AccountSettingsPage() {
             setDeleteConfirmation("");
           }
         }}
-        title={tx("Подтвердите удаление аккаунта")}
+        title={tx("Удалить аккаунт без возможности восстановления?")}
       >
-        <h2 className="text-xl font-bold">{tx("Удалить аккаунт без возможности восстановления?")}</h2>
         <p className="mt-3 text-sm text-muted">
           {tx("Это действие завершит сессию и удалит аккаунт. Для подтверждения введите слово УДАЛИТЬ.")}</p>
         <input
@@ -429,7 +442,10 @@ function OrderRefundInfo({ orderId }: { orderId: number }) {
 }
 
 function MyTicketCard({ ticket }: { ticket: Ticket }) {
-  const { tx, statusLabel } = useLanguage();
+  const { tx, statusLabel, locale } = useLanguage();
+  // TicketResponse has no date or venue: they come from the (shared, cached) event query.
+  const event = useTicketEvent(ticket.eventId);
+  const eventGone = event.error instanceof ApiError && event.error.status === 404;
   const queryClient = useQueryClient();
   const pdf = useMutation({ mutationFn: async () => downloadBlob(await getTicketPdf(ticket.id), `biletflow-ticket-${ticket.id}.pdf`) });
   const [showQr, setShowQr] = useState(false);
@@ -466,13 +482,17 @@ function MyTicketCard({ ticket }: { ticket: Ticket }) {
 
   return (
     <article className="rounded-xl border p-4">
-      <p className="text-xs text-muted">{ticket.eventTitle}</p>
-      <CalendarMenu eventId={ticket.eventId} resolveStatus />
-      <h3 className="mt-1 font-semibold">{ticket.ticketTypeName}</h3>
+      <p className="text-sm font-semibold">{ticket.eventTitle}</p>
+      {event.data && <p className="mt-1 text-sm">{formatLongDate(event.data.startTime, locale)}, {formatTime(event.data.startTime)}</p>}
+      {event.data?.venue && <p className="text-sm text-muted">{event.data.venue.name}{event.data.venue.address && `, ${event.data.venue.address}`}</p>}
+      {event.isLoading && <p className="mt-1 text-sm text-muted">{tx("Загрузка…")}</p>}
+      <h3 className="mt-2 font-semibold">{ticket.ticketTypeName}</h3>
       {ticket.seatLabel && <p className="mt-1 text-sm font-medium">{ticket.seatLabel}</p>}
       <p className="mt-2 text-sm">{tx("Статус: ")}{statusLabel(ticket.status)}</p>
       <p className="mt-1 text-sm">{ticket.attendeeName ?? ticket.attendeeEmail}</p>
       <p className="mt-1 text-xs text-muted">{tx("Билет №")}{ticket.id} {tx(" · Заказ №")}{ticket.orderId}</p>
+      {/* Cancellation is known from the event; only an event that is no longer public needs the calendar endpoint to tell. */}
+      {(event.data || eventGone) && <CalendarMenu eventId={ticket.eventId} cancelled={event.data?.status === "CANCELLED"} resolveStatus={eventGone} />}
       {invalid ? (
         <p role="status" data-qr-invalid="true" className="mt-3 rounded-lg border-2 border-red-600 bg-red-50 p-3 text-sm font-semibold text-red-900">
           ✕ {ticket.status === "REFUNDED" ? tx("Билет возвращён") : tx("Билет отменён")}. {tx("QR-код недействителен для входа.")}
@@ -508,6 +528,11 @@ export function EventCheckInPage() {
   const [scanMessage, setScanMessage] = useState("");
   // The outcome of the last scan or manual check-in, shown as a large result card.
   const [lastResult, setLastResult] = useState<CheckInResult | null>(null);
+  const [undoTarget, setUndoTarget] = useState<Ticket | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  // USB barcode scanners type the code and press Enter: keep the field focused between scans.
+  const codeInput = useRef<HTMLInputElement>(null);
+  const refocusCode = () => window.setTimeout(() => codeInput.current?.focus(), 0);
   const queryClient = useQueryClient();
   const stats = useQuery({
     queryKey: ["check-in-stats", eventId],
@@ -535,6 +560,7 @@ export function EventCheckInPage() {
       setLastResult(null);
       setScanMessage(error instanceof Error ? tx(error.message) : tx("Не удалось проверить билет."));
     },
+    onSettled: refocusCode,
   });
   const undo = useMutation({
     mutationFn: (ticketId: number) => undoEventCheckIn(eventId, ticketId),
@@ -556,19 +582,43 @@ export function EventCheckInPage() {
     setPage(0);
     setSearch(searchInput.trim());
   };
-  const submitScan = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const ticketCode = code.trim();
+  const runScan = (value: string) => {
+    const ticketCode = value.trim();
     if (!ticketCode || !eventId) return;
+    if (looksLikeUrl(ticketCode)) {
+      // e.g. a Campaign QR: a discount link, never an admission ticket.
+      setLastResult(null);
+      setCode("");
+      setScanMessage(tx("Это ссылка (например, QR-код акции), а не билет. Попросите показать QR-код билета."));
+      refocusCode();
+      return;
+    }
     setScanMessage("");
     scan.mutate(ticketCode);
   };
-  const confirmUndo = (ticket: Ticket) => {
-    if (window.confirm(tx("Отменить проход для билета №{0}?", [ticket.id]))) undo.mutate(ticket.id);
+  const submitScan = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    runScan(code);
   };
+  const onCameraCode = (value: string) => {
+    if (scan.isPending) return;
+    setCode(value);
+    runScan(value);
+  };
+  const confirmUndo = (ticket: Ticket) => setUndoTarget(ticket);
 
   return (
     <section className="space-y-5">
+      <ConfirmDialog
+        open={undoTarget !== null}
+        title={tx("Отменить проход для билета №{0}?", [undoTarget?.id ?? ""])}
+        message={undoTarget && <>{undoTarget.attendeeName ?? undoTarget.attendeeEmail} · {undoTarget.ticketTypeName}<br />{tx("Билет снова станет действительным для входа.")}</>}
+        confirmLabel={tx("Отменить проход")}
+        cancelLabel={tx("Оставить отметку")}
+        destructive
+        onConfirm={() => { if (undoTarget) undo.mutate(undoTarget.id); setUndoTarget(null); }}
+        onCancel={() => setUndoTarget(null)}
+      />
       <div>
         <h1 className="text-2xl font-bold">{tx("Check-in мероприятия")}</h1>
         <p className="mt-1 text-sm text-muted">{tx("Доступны только назначенные вам мероприятия.")}</p>
@@ -592,9 +642,12 @@ export function EventCheckInPage() {
           <form onSubmit={submitScan} className="rounded-xl border p-4">
             <h2 className="font-semibold">{tx("Проверить билет")}</h2>
             <div className="mt-3 flex flex-wrap gap-2">
-              <input autoComplete="off" value={code} onChange={(event) => setCode(event.target.value)} placeholder={tx("Код билета")} className="min-w-60 flex-1 rounded-lg border px-3 py-2 text-sm" />
+              <input ref={codeInput} autoFocus autoComplete="off" aria-label={tx("Код билета")} value={code} onChange={(event) => setCode(event.target.value)} placeholder={tx("Код билета")} className="min-w-60 flex-1 rounded-lg border px-3 py-2 text-sm" />
               <Button type="submit" disabled={!code.trim() || scan.isPending}>{scan.isPending ? tx("Проверяем…") : tx("Проверить")}</Button>
+              <Button variant="secondary" aria-expanded={cameraOpen} onClick={() => setCameraOpen(open => !open)}>{cameraOpen ? tx("Закрыть камеру") : tx("Сканировать камерой")}</Button>
             </div>
+            <p className="mt-2 text-xs text-muted">{tx("Поле кода остаётся в фокусе: можно сканировать USB-сканером подряд.")}</p>
+            {cameraOpen && <CameraScanner onDetected={onCameraCode} onClose={() => { setCameraOpen(false); refocusCode(); }} />}
             {lastResult && <CheckInResultCard result={lastResult} />}
             {scanMessage && <p role="status" className="mt-3 rounded-md bg-surface p-3 text-sm">{tx(scanMessage)}</p>}
             {undo.error && <ApiErrorMessage error={undo.error} />}
@@ -646,6 +699,7 @@ export function PlatformAdminPage() {
   const [page, setPage] = useState(0);
   const [suspensionTarget, setSuspensionTarget] = useState<{ id: number; title: string } | null>(null);
   const [userFilters, setUserFilters] = useState<{ q?: string; role?: string; suspended?: string }>({});
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
   const users = useQuery({ queryKey: ["admin-users", page, userFilters], queryFn: () => getUsers(page, PAGE_SIZE, userFilters) });
   const events = useQuery({ queryKey: ["admin-events"], queryFn: () => getAdminEvents({ page: 0, size: 100 }) });
   const remove = useMutation({
@@ -673,6 +727,16 @@ export function PlatformAdminPage() {
 
   return (
     <section>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={tx("Удалить пользователя {0}?", [deleteTarget?.email ?? ""])}
+        message={tx("Аккаунт будет удалён без возможности восстановления.")}
+        confirmLabel={tx("Удалить пользователя")}
+        cancelLabel={tx("Не удалять")}
+        destructive
+        onConfirm={() => { if (deleteTarget) remove.mutate(deleteTarget.id); setDeleteTarget(null); }}
+        onCancel={() => setDeleteTarget(null)}
+      />
       {suspensionTarget && <EventSuspensionDialog
         key={suspensionTarget.id}
         event={suspensionTarget}
@@ -702,9 +766,7 @@ export function PlatformAdminPage() {
               key={user.id}
               user={user}
               pending={remove.isPending}
-              onDelete={() => {
-                if (window.confirm(tx("Удалить пользователя {0}?", [user.email]))) remove.mutate(user.id);
-              }}
+              onDelete={() => setDeleteTarget(user)}
             />
           ))}
         </div>
@@ -758,6 +820,7 @@ function AdminUserCard({ user, pending, onDelete }: { user: User; pending: boole
   const [password, setPassword] = useState("");
   const [role, setRole] = useState(user.role.replace(/^ROLE_/, ""));
   const [formError, setFormError] = useState("");
+  const [confirmRole, setConfirmRole] = useState(false);
   const update = useMutation({
     mutationFn: (request: UpdateUserRequest) => updateUser(user.id, request),
     onSuccess: async () => {
@@ -798,6 +861,15 @@ function AdminUserCard({ user, pending, onDelete }: { user: User; pending: boole
 
   return (
     <article className="rounded-xl border p-4">
+      <ConfirmDialog
+        open={confirmRole}
+        title={tx("Назначить пользователю {0} роль {1}?", [user.email, statusLabel(role)])}
+        message={tx("Права пользователя изменятся сразу после сохранения.")}
+        confirmLabel={tx("Изменить роль")}
+        cancelLabel={tx("Не менять")}
+        onConfirm={() => { updateRole.mutate(role); setConfirmRole(false); }}
+        onCancel={() => setConfirmRole(false)}
+      />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><p className="font-medium">{user.email}</p><p className="text-xs text-muted">ID {user.id} {tx(" · Роль: ")}{statusLabel(user.role)}</p></div>
         <div className="flex gap-2">
@@ -820,9 +892,7 @@ function AdminUserCard({ user, pending, onDelete }: { user: User; pending: boole
               type="button"
               variant="secondary"
               disabled={updateRole.isPending}
-              onClick={() => {
-                if (window.confirm(tx("Назначить пользователю {0} роль {1}?", [user.email, role]))) updateRole.mutate(role);
-              }}
+              onClick={() => setConfirmRole(true)}
             >
               {updateRole.isPending ? tx("Сохраняем роль…") : tx("Изменить роль")}
             </Button>

@@ -34,7 +34,8 @@ export function DateStrip({ selected, onSelect }: Props) {
               isSelected ? "bg-brand text-white" : "bg-white hover:bg-gray-100"
             }`}
           >
-            <span className={`text-[10px] ${!isSelected && isWeekend ? "text-orange-500" : ""}`}>
+            {/* Weekend weekday in orange-700: 5.2:1 on the white button. */}
+            <span className={`text-xs ${!isSelected && isWeekend ? "font-semibold text-orange-700" : ""}`}>
               {i === 0 ? t("today") : weekdayShort(date, locale)}
             </span>
             <span className="text-base font-bold">{key.slice(8).replace(/^0/, "")}</span>
