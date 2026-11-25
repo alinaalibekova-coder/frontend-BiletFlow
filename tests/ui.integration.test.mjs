@@ -22,8 +22,8 @@ await build({ stdin: { contents: `
   export function renderConfirm(props) {
     return renderToString(React.createElement(ConfirmDialog, { open: true, onConfirm() {}, onCancel() {}, ...props }));
   }
-  export function renderDateStrip() {
-    return renderToString(React.createElement(DateStrip, { selected: null, onSelect() {} }));
+  export function renderDateStrip(selected = null) {
+    return renderToString(React.createElement(DateStrip, { selected, onSelect() {} }));
   }
   import { SeatMapPicker } from './src/components/events/SeatMapPicker';
   import { OrderItemsList } from './src/components/orders/OrderItemsList';
@@ -747,6 +747,20 @@ test("weekend dates use a colour that passes contrast", () => {
   const html = renderDateStrip();
   assert.doesNotMatch(html, /text-orange-500|text-\[10px\]/);
   assert.match(html, /text-orange-800/);
+});
+test("choose-a-date is a real date field that covers the button, so a click opens the calendar", () => {
+  const html = renderDateStrip();
+  assert.match(html, /<input[^>]*type="date"[^>]*>/);
+  assert.doesNotMatch(html, /<input[^>]*type="date"[^>]*class="[^"]*sr-only/);
+  assert.match(html, /<input[^>]*type="date"[^>]*class="[^"]*absolute inset-0/);
+  assert.match(html, /aria-label="Choose a date"|aria-label="Выбрать дату"|aria-label="Күнді таңдау"/);
+});
+test("a date picked in the calendar is shown on the button, a chip date is not", () => {
+  const far = renderDateStrip("2099-03-05");
+  assert.match(far, /value="2099-03-05"/);
+  assert.match(far, /bg-primary text-white[^"]*"[^>]*><svg[\s\S]*?5 (марта|March|наурыз)/);
+  const chip = renderDateStrip(new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10));
+  assert.doesNotMatch(chip, /ml-auto[^"]*border-primary bg-primary text-white/);
 });
 test("the home page has exactly one h1 with or without filters", async () => {
   for (const url of ["/", "/?q=jazz", "/?category=MUSIC&date=2027-12-10"]) {

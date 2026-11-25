@@ -1,4 +1,5 @@
-import { dayKey, parseDateFilter, weekdayShort, weekendRange } from "../../lib/format";
+import type { KeyboardEvent, MouseEvent } from "react";
+import { dayKey, formatShortDate, parseDateFilter, weekdayShort, weekendRange } from "../../lib/format";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { Icon } from "../ui/Icons";
 
@@ -10,6 +11,16 @@ interface Props {
 
 const DAYS = 14;
 
+// A date input only opens its calendar from its own icon, never from a click on the label around it.
+// showPicker() opens it from anywhere; browsers without it fall back to focusing the field.
+function openDatePicker(input: HTMLInputElement) {
+  try {
+    input.showPicker();
+  } catch {
+    input.focus();
+  }
+}
+
 // Quick chips (today, tomorrow, weekend), then the next 14 days, then a free date picker.
 export function DateStrip({ selected, onSelect }: Props) {
   const { t, tx, locale } = useLanguage();
@@ -20,6 +31,8 @@ export function DateStrip({ selected, onSelect }: Props) {
   });
   const weekend = weekendRange(today);
   const range = parseDateFilter(selected);
+  // A single day picked in the calendar that is not one of the chips: show it on the button.
+  const customDate = range && range.from === range.to && !days.some((d) => d.key === range.from) ? range.from : null;
   const pick = (value: string) => onSelect(selected === value ? null : value);
   const quick: [string, string][] = [[days[0].key, t("today")], [days[1].key, tx("Завтра")], [weekend, tx("Выходные")]];
 
@@ -35,14 +48,25 @@ export function DateStrip({ selected, onSelect }: Props) {
             </button>
           );
         })}
-        <label className="ml-auto flex min-h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-gray-300 px-3.5 text-sm font-semibold hover:border-primary hover:bg-primary-soft focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary">
+        {/* The real <input type="date"> covers the whole pill (transparent), so a tap opens the native
+            calendar on phones, and a click or Enter/Space opens it on desktop. */}
+        <label className={`relative ml-auto flex min-h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary ${customDate ? "border-primary bg-primary text-white" : "border-gray-300 hover:border-primary hover:bg-primary-soft"}`}>
           <Icon name="calendar" className="h-4 w-4" />
-          {t("chooseDate")}
+          {customDate ? formatShortDate(customDate, locale) : t("chooseDate")}
           <input
             type="date"
-            className="sr-only"
+            aria-label={t("chooseDate")}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            min={days[0].key}
             value={range && range.from === range.to ? range.from : ""}
             onChange={(e) => onSelect(e.target.value || null)}
+            onClick={(e: MouseEvent<HTMLInputElement>) => openDatePicker(e.currentTarget)}
+            onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openDatePicker(e.currentTarget);
+              }
+            }}
           />
         </label>
       </div>
