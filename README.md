@@ -211,6 +211,7 @@ Temporary workarounds until the backend adds them:
   backend catalog now accepts `q`, `category`, `venueId`, `from`/`to` and `priceMin`/`priceMax`, but
   has no city field, so the frontend keeps one client-side filter set. Events without an end time
   stay listed until the end of their start day (Asia/Almaty); a date matches every day an event spans.
+  `?date=` is one day (`2026-11-28`) or a range (`2026-11-28_2026-11-29`, used by the Weekend chip).
 - **Price on cards** uses the backend's `EventResponse.minPrice` (cheapest non-hidden ticket type).
   `null` means either no ticket types or only hidden ones, so only those cards load their ticket
   types, to show "No tickets required" or "Tickets not available yet" exactly as the event page does.
@@ -271,19 +272,54 @@ the backend's answer.
 ```text
 src/
   api/          everything that talks to the backend (only client.ts calls fetch)
-  auth/         login state: who is logged in, open/close the login window
+  auth/         login state, cross-tab sign-in/out sync, the login window
   hooks/        data loading for pages (TanStack Query)
   components/
-    ui/         Button, TextInput, Modal, ErrorMessage
-    layout/     Header, CategoryNav, PageLayout
-    events/     EventCard, HeroBanner, DateStrip
-    auth/       LoginModal
-  pages/        HomePage, EventPage, NotFoundPage
-  lib/          date and price formatting
+    ui/         Button (primary/secondary/danger/ghost), TextInput, Modal, ConfirmDialog,
+                ToastProvider/useToast, StatusBadge, KpiCard, EmptyState, Icons (inline SVG)
+    layout/     Header (logo, user menu), CategoryNav (pill chips), PageLayout
+    events/     EventCard, HeroBanner (carousel), DateStrip, EventPoster, TicketSelector,
+                SeatMapPicker, EventExtras (calendar, report, share)
+    orders/     HoldCountdown, CheckoutSteps, order item lists
+    checkin/    CheckInResultCard, CameraScanner
+    analytics/  Charts (daily sales, ticket types, check-in donut), attendance, sales insights
+  pages/        route pages (organizer and admin modules are lazy-loaded)
+  lib/          dates and prices, promo storage, registration timing, maps, motion helpers
   App.tsx       which page shows for which address
   main.tsx      app start
-  index.css     colors from the Figma design
+  index.css     design tokens (@theme), focus ring, shimmer, reduced motion
 ```
+
+## Design system
+
+Tokens live in `src/index.css` (`@theme`), and components use them through Tailwind classes
+(`bg-primary`, `text-primary-dark`, `bg-warn-soft`, `shadow-lifted`, `rounded-[var(--radius-card)]`).
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `primary` / `primary-dark` / `primary-soft` | `#534AB7` / `#3C3489` / `#EEEDFE` | actions, active and selected states |
+| `ink`, `brand`, `muted`, `surface` | `#14122B`, `#111111`, `#6B6B6B`, `#F2F2F2` | headings and dark heroes, text, secondary text, quiet backgrounds |
+| `warn` (+ `-soft`, `-ink`) | `#EF9F27` | "few left" chips, warnings |
+| `success`, `danger`, `info` (+ `-soft`, `-ink`) | — | status badges and messages |
+| `radius-card` | 14px | cards, panels, dialogs |
+| `shadow-soft` / `shadow-lifted` / `shadow-panel` | — | resting, hover/sticky, dialogs and menus |
+| `focus` | primary | the global `:focus-visible` outline |
+
+Every text/background pair used is at least 4.5:1 (ratios are listed in `index.css`). State is never
+shown by colour alone: status badges carry an icon and text, seat states keep their symbols, chart
+series have a legend and a table view. `prefers-reduced-motion` turns off transitions, the card
+hover lift and zoom, the page fade, shimmer and the hero carousel's auto-rotation. Dark mode is not
+implemented yet. The font remains Inter (with system fallbacks), which covers Kazakh Cyrillic.
+
+Charts (`components/analytics/Charts.tsx`) are hand-rolled SVG: the primary colour for single
+series, orange `#F47230` as the validated second series (colourblind-safe against primary), thin
+bars with rounded data ends, hairline gridlines, hover tooltips and a "Show as table" toggle.
+Seat-map price categories use a validated categorical palette; every section also prints its price.
+
+Feedback: `useToast()` shows short success/error messages in one polite live region (auto-dismiss
+after 5 s, paused on hover/focus, closable). `ConfirmDialog` replaces `window.confirm` everywhere.
+`Modal` traps focus, focuses the dialog on open, returns focus to the opener, and closes on Escape
+or a backdrop click.
 
 ## Commands
 
