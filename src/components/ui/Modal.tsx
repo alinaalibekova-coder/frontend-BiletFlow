@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { useLanguage } from "../../i18n/LanguageContext";
+import { createOpenerTracker, type OpenerTracker } from "../../lib/focusReturn";
 
 interface Props {
   open: boolean;
@@ -24,10 +25,18 @@ export function Modal({ open, onClose, title, titleClassName = "pr-6 text-xl fon
   const onCloseRef = useRef(onClose);
   useEffect(() => { onCloseRef.current = onClose; });
 
+  // The opener is read during render, when `open` turns true and the dialog's DOM does not exist
+  // yet. An effect would run too late: children with autoFocus (the login email field, the
+  // ConfirmDialog buttons) have already moved focus into the dialog by then.
+  const tracker = useRef<OpenerTracker<HTMLElement> | null>(null);
+  tracker.current ??= createOpenerTracker<HTMLElement>();
+  tracker.current.render(open, typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null);
+
   useEffect(() => {
     if (!open) return;
+    const openerTracker = tracker.current;
+    openerTracker?.mounted();
     const dialog = dialogRef.current;
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const focusables = () => dialog ? [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(el => el.offsetParent !== null || el === document.activeElement) : [];
     // A child with autoFocus has already taken focus; otherwise focus the first control after ×.
     if (dialog && !dialog.contains(document.activeElement)) {
@@ -50,7 +59,8 @@ export function Modal({ open, onClose, title, titleClassName = "pr-6 text-xl fon
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
-      if (opener?.isConnected) opener.focus();
+      // Closing (or the Modal being removed) gives focus back to the opener if it is still on the page.
+      openerTracker?.closed();
     };
   }, [open]);
 

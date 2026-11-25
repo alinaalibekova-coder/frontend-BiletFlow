@@ -917,3 +917,19 @@ test("pages render inside one polite toast region and a reduced-motion-safe page
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation-duration: 0\.01ms/);
   assert.match(css, /:focus-visible \{\s*outline: 2px solid var\(--color-focus\)/);
 });
+test("back from the bank, a pending order past its hold time waits for the bank instead of showing expiry", async () => {
+  const late = { ...order, expiresAt: almatyLocal(-5 * 60_000) };
+  const html = await renderRoute("/orders/42/payment-result", attendee, [[["order", 42], late], [["order-payments", 42], []]]);
+  assert.doesNotMatch(html, /Срок действия заказа истёк/);
+  assert.match(html, /data-waiting-for-bank="true"[^>]*>[\s\S]*?Проверяем оплату/);
+  assert.match(html, /<button type="button" class="[^"]*">Проверить оплату<\/button>/);
+  assert.doesNotMatch(html, /data-hold-warning|Резерв истёк/);
+  assert.doesNotMatch(html, /\(не завершено\)/);
+  // Only the backend's EXPIRED status ends the wait on this page.
+  const expired = await renderRoute("/orders/42/payment-result", attendee, [[["order", 42], { ...late, status: "EXPIRED" }], [["order-payments", 42], []]]);
+  assert.match(expired, /Срок действия заказа истёк/);
+  assert.doesNotMatch(expired, /data-waiting-for-bank/);
+  // The ordinary order page still treats a passed hold as expired.
+  const plain = await renderRoute("/orders/42", attendee, [[["order", 42], late], [["order-payments", 42], []]]);
+  assert.match(plain, /Срок действия заказа истёк/);
+});

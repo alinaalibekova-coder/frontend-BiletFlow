@@ -14,6 +14,7 @@ import { formatPrice, formatDateTime, parseDate } from "../lib/format";
 import { HoldCountdown } from "../components/orders/HoldCountdown";
 import { CheckoutSteps } from "../components/orders/CheckoutSteps";
 import { StatusBadge } from "../components/ui/StatusBadge";
+import { Icon } from "../components/ui/Icons";
 
 const statusLabels: Record<OrderStatus, string> = {
   PENDING: "Ожидает подтверждения",
@@ -89,6 +90,10 @@ export default function OrderConfirmationPage({ paymentResult = false }: { payme
   const currentOrder = order.data;
   const pending = currentOrder.status === "PENDING";
   const holdOver = pending && (holdExpired || (!!currentOrder.expiresAt && parseDate(currentOrder.expiresAt).getTime() <= openedAt));
+  // Back from the bank: a PENDING order past its hold time may still be confirmed by the bank,
+  // so it is "waiting for the bank", never "expired", until the backend itself says EXPIRED.
+  const waitingForBank = paymentResult && pending;
+  const showExpired = currentOrder.status === "EXPIRED" || (holdOver && !waitingForBank);
   const canConfirm = pending && !holdOver;
   const onHoldExpired = () => {
     setHoldExpired(true);
@@ -98,15 +103,15 @@ export default function OrderConfirmationPage({ paymentResult = false }: { payme
 
   return (
     <section className="mx-auto max-w-2xl" aria-labelledby="order-title">
-      <CheckoutSteps current={currentOrder.status === "PAID" ? 3 : 2} failed={["CANCELLED", "EXPIRED"].includes(currentOrder.status) || holdOver} />
+      <CheckoutSteps current={currentOrder.status === "PAID" ? 3 : 2} failed={["CANCELLED", "EXPIRED"].includes(currentOrder.status) || showExpired} />
       <p className="text-sm text-muted">{tx("Заказ №")}{currentOrder.id}</p>
       <h1 id="order-title" className="mt-1 text-2xl font-bold">
         {currentOrder.status === "PAID" ? tx("Заказ подтверждён") : tx("Подтверждение заказа")}
       </h1>
       <p className="mt-2 text-sm text-muted">{currentOrder.eventTitle}</p>
       {currentOrder.attendeeName && <p className="mt-2 text-sm">{tx("Посетитель: ")}{currentOrder.attendeeName}</p>}
-      {pending && currentOrder.expiresAt && <HoldCountdown expiresAt={currentOrder.expiresAt} createdAt={currentOrder.createdAt} onExpire={onHoldExpired} />}
-      {paymentResult && currentOrder.status === "PENDING" && <p role="status" className="mt-4 rounded-lg bg-amber-50 p-4 text-sm">{tx("Проверяем оплату. Билеты появятся после подтверждения банка. Статус обновляется автоматически.")}</p>}
+      {pending && currentOrder.expiresAt && !(waitingForBank && holdOver) && <HoldCountdown expiresAt={currentOrder.expiresAt} createdAt={currentOrder.createdAt} onExpire={onHoldExpired} />}
+      {waitingForBank && <p role="status" data-waiting-for-bank="true" className="mt-4 flex items-start gap-2 rounded-[var(--radius-card)] bg-info-soft p-4 text-sm text-info-ink"><Icon name="clock" className="mt-0.5 h-4 w-4" />{tx("Проверяем оплату. Билеты появятся после подтверждения банка. Статус обновляется автоматически.")}</p>}
 
       <section className="mt-6 rounded-[var(--radius-card)] border border-gray-200 bg-white p-5 shadow-soft" aria-label={tx("Состав заказа")}>
         <div className="space-y-3">
@@ -138,7 +143,7 @@ export default function OrderConfirmationPage({ paymentResult = false }: { payme
       {currentOrder.status === "REFUNDED" && (
         <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{tx("Организатор вернул деньги за этот заказ. Билеты больше не действуют.")}</p>
       )}
-      {(currentOrder.status === "EXPIRED" || holdOver) && (
+      {showExpired && (
         <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{tx("Срок действия заказа истёк. Создайте новый заказ.")}</p>
       )}
       {confirmation.error && (

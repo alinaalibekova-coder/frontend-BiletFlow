@@ -23,7 +23,11 @@ export function EventCard({ event }: { event: Event }) {
   const ticketsNotRequired = !serverPrice && event.status === "PUBLISHED" && types !== undefined && types.length === 0;
   const visibleTypes = (types ?? []).filter(type => !type.hidden);
   const soldOut = visibleTypes.length > 0 && visibleTypes.every(type => type.available <= 0);
-  // Only from ticket types this card already loaded: no extra request per card.
+  // Only from ticket types this card already loaded: no extra request per card. Cards with a
+  // numeric server minPrice load none, so they cannot show "few left" or "sold out": the public
+  // EventResponse has no stock field (ticketsRemaining exists only on the organizer sales API).
+  // Backend field needed on EventResponse: `ticketsRemaining` (sum of `available` over visible ticket
+  // types currently on sale, or null when unknown) and/or `soldOut` (boolean).
   const left = visibleTypes.filter(type => isBuyableNow(type, event.paidSalesActive)).reduce((sum, type) => sum + type.available, 0);
   const fewLeft = left > 0 && left <= LOW_STOCK;
   const priceText = ticketsNotRequired

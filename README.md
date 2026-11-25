@@ -412,5 +412,7 @@ node tests/deployment.smoke.mjs
   labelled by its visible title) instead of `window.confirm`.
 - Ticket cards show event date, time and venue from the cached event query (`TicketResponse` has no
   such fields); several tickets of one event share one request.
-- Backend work still needed: a city field for server-side catalog filtering; filtering financial sales
+- Backend work still needed: `ticketsRemaining` (available tickets on sale now, or null) and/or `soldOut` on the public
+  `EventResponse`, so cards with a numeric `minPrice` can show "few left" and "sold out" without loading ticket types;
+  a city field for server-side catalog filtering; filtering financial sales
   totals and campaign attribution, beyond the currently filtered daily series.
