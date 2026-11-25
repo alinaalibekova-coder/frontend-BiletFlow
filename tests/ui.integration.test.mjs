@@ -734,7 +734,7 @@ test("no window.confirm and no sub-12px text remain in the app", () => {
 test("weekend dates use a colour that passes contrast", () => {
   const html = renderDateStrip();
   assert.doesNotMatch(html, /text-orange-500|text-\[10px\]/);
-  assert.match(html, /text-orange-700/);
+  assert.match(html, /text-orange-800/);
 });
 test("the home page has exactly one h1 with or without filters", async () => {
   for (const url of ["/", "/?q=jazz", "/?category=MUSIC&date=2027-12-10"]) {
@@ -778,4 +778,38 @@ test("category chips have icons and mark the active category without relying on 
   const nav = html.match(/<nav aria-label="Категории"[\s\S]*?<\/nav>/)?.[0] ?? "";
   assert.match(nav, /aria-current="page"[^>]*>(<svg[\s\S]*?<\/svg>)?Музыка/);
   assert.equal((nav.match(/<svg/g) ?? []).length, (nav.match(/<li/g) ?? []).length);
+});
+test("the hero is an accessible carousel of the next three events with a pause control", async () => {
+  const many = [7, 8, 9, 10].map((id, i) => ({ ...event, id, title: `Show ${id}`, startTime: `2027-12-1${i}T18:00:00`, minPrice: 1000 }));
+  const html = (await renderRoute("/", null, [[["events"], page(many)]])).replace(/<!-- -->/g, "");
+  const hero = html.match(/<section aria-roledescription="карусель"[\s\S]*?<\/section>/)?.[0] ?? "";
+  assert.match(hero, /aria-label="Ближайшие события"/);
+  assert.match(hero, /<h2[^>]*>Show 7<\/h2>/);
+  assert.equal((hero.match(/aria-label="Слайд \d: Show/g) ?? []).length, 3);
+  assert.doesNotMatch(hero, /Show 10/);
+  assert.match(hero, /aria-current="true"/);
+  assert.match(hero, /aria-label="Предыдущее событие"/);
+  assert.match(hero, /aria-label="Следующее событие"/);
+  assert.match(hero, /aria-pressed="false"[^>]*>Пауза</);
+  assert.match(hero, /data-poster-fallback="true"/);
+  assert.match(hero, /от 1[\s ]000 ₸/);
+});
+test("event cards show a date badge, icon rows and a few-left chip from already loaded ticket types", async () => {
+  const html = (await renderRoute("/?q=jazz", null, [[["events"], page([{ ...event, title: "Jazz", paidSalesActive: true }])], [["ticket-types", 7], [{ id: 1, eventId: 7, name: "A", price: 3000, available: 4, hidden: false }]]])).replace(/<!-- -->/g, "");
+  assert.match(html, /text-lg font-extrabold">10</);
+  assert.match(html, /uppercase text-primary-dark">дек/);
+  assert.match(html, /Осталось 4/);
+  assert.match(html, /от 3[\s ]000 ₸/);
+  const plenty = await renderRoute("/?q=jazz", null, [[["events"], page([{ ...event, title: "Jazz", minPrice: 3000 }])]]);
+  assert.doesNotMatch(plenty, /Осталось \d/);
+});
+test("the weekend chip filters by a date range and empty results offer a reset", async () => {
+  const html = await renderRoute("/?date=2027-12-11_2027-12-12", null, [[["events"], page([{ ...event, title: "Friday", startTime: "2027-12-10T18:00:00" }, { ...event, id: 8, title: "Saturday", startTime: "2027-12-11T18:00:00" }])]]);
+  assert.match(html, /Saturday/);
+  assert.doesNotMatch(html, /<h3[^>]*>Friday/);
+  assert.match(html, />Выходные</);
+  assert.match(html, />Завтра</);
+  const empty = await renderRoute("/?q=nothing-matches", null, catalogSeeds);
+  assert.match(empty, /Ничего не найдено/);
+  assert.match(empty, /<button[^>]*>Сбросить фильтры<\/button>/);
 });

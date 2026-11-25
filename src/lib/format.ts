@@ -65,9 +65,40 @@ export function eventVisibleUntil(event: { startTime: string; endTime?: string |
 
 // Whether an event takes place on a day ("2026-10-24"): every day from its start to its end counts.
 export function eventCoversDay(event: { startTime: string; endTime?: string | null }, day: string): boolean {
+  return eventOverlapsDays(event, day, day);
+}
+
+// Whether an event takes place on any day from `from` to `to` (inclusive, "YYYY-MM-DD").
+export function eventOverlapsDays(event: { startTime: string; endTime?: string | null }, from: string, to: string): boolean {
   const first = dayKey(parseDate(event.startTime));
-  const last = event.endTime ? dayKey(parseDate(event.endTime)) : first;
-  return first <= day && day <= (last < first ? first : last);
+  const end = event.endTime ? dayKey(parseDate(event.endTime)) : first;
+  const last = end < first ? first : end;
+  return first <= to && last >= from;
+}
+
+// The catalog's ?date= is one day ("2026-11-28") or a range ("2026-11-28_2026-11-29").
+export function parseDateFilter(value: string | null): { from: string; to: string } | null {
+  const match = value?.match(/^(\d{4}-\d{2}-\d{2})(?:_(\d{4}-\d{2}-\d{2}))?$/);
+  if (!match) return null;
+  const [from, to = match[1]] = [match[1], match[2]];
+  return from <= to ? { from, to } : { from: to, to: from };
+}
+
+// The next weekend as a ?date= range in Kazakhstan: this Sat–Sun, or just Sunday on a Sunday.
+export function weekendRange(now = new Date()): string {
+  const today = dayKey(now);
+  const weekday = new Date(`${today}T12:00:00+05:00`).getUTCDay();
+  const day = (offset: number) => dayKey(new Date(parseDate(`${today}T12:00:00`).getTime() + offset * 86_400_000));
+  if (weekday === 0) return `${today}_${today}`;
+  return `${day(6 - weekday)}_${day(7 - weekday)}`;
+}
+
+const KAZAKH_SHORT_MONTHS = ["қаң", "ақп", "нау", "сәу", "мам", "мау", "шіл", "там", "қыр", "қаз", "қар", "жел"];
+// Day and short month for a card's date badge: { day: "10", month: "дек." }.
+export function dateBadge(iso: string, locale = "ru-RU"): { day: string; month: string } {
+  const [, month, day] = dayKey(parseDate(iso)).split("-").map(Number);
+  if (locale.startsWith("kk")) return { day: String(day), month: KAZAKH_SHORT_MONTHS[month - 1] };
+  return { day: String(day), month: new Intl.DateTimeFormat(locale, { month: "short", timeZone: TZ }).format(parseDate(iso)).replace(".", "") };
 }
 
 // "Пн"

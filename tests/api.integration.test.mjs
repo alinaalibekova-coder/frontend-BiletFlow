@@ -12,7 +12,7 @@ const bundle = await build({ stdin: { contents: `
   export * as promo from './src/lib/promo';
   export { looksLikeUrl } from './src/lib/checkInCode';
   export { minPrice, isBuyableNow } from './src/hooks/useEvents';
-  export { formatCountdown, holdMilestone, eventVisibleUntil, eventCoversDay, formatTime, dayKey } from './src/lib/format';
+  export { formatCountdown, holdMilestone, eventVisibleUntil, eventCoversDay, formatTime, dayKey, parseDateFilter, weekendRange, eventOverlapsDays, dateBadge } from './src/lib/format';
   export { summarizeInventory } from './src/lib/salesInventory';
   export * as seating from './src/api/seating';
   export * as platform from './src/api/platform';
@@ -31,7 +31,7 @@ const bundle = await build({ stdin: { contents: `
   export { startOrderPayment } from './src/lib/checkout';
   export { formatPrice, parseDate, formatLongDate, formatShortDate, weekdayShort, almatyTimestamp } from './src/lib/format';
 `, resolveDir: process.cwd() }, bundle: true, platform: "node", format: "esm", write: false });
-const { looksLikeUrl, nextRegistrationBoundary, promo, minPrice, isBuyableNow, formatCountdown, holdMilestone, eventVisibleUntil, eventCoversDay, formatTime, dayKey, categoryKey, categoryLabel, posterUrlThroughProxy, checkIn, orders, sales, registrationState, summarizeInventory, seating, platform, users, auth, commerce, support, notifications, events, catalog, venueForms, languageUtils, pageLanguage, client, startOrderPayment, formatPrice, parseDate, formatLongDate, formatShortDate, weekdayShort, almatyTimestamp } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+const { parseDateFilter, weekendRange, eventOverlapsDays, dateBadge, looksLikeUrl, nextRegistrationBoundary, promo, minPrice, isBuyableNow, formatCountdown, holdMilestone, eventVisibleUntil, eventCoversDay, formatTime, dayKey, categoryKey, categoryLabel, posterUrlThroughProxy, checkIn, orders, sales, registrationState, summarizeInventory, seating, platform, users, auth, commerce, support, notifications, events, catalog, venueForms, languageUtils, pageLanguage, client, startOrderPayment, formatPrice, parseDate, formatLongDate, formatShortDate, weekdayShort, almatyTimestamp } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
 
 let expected;
 let requests;
@@ -652,4 +652,18 @@ test("the cheapest price counts only ticket types that can be bought now", () =>
 test("campaign links are never treated as ticket codes", () => {
   for (const value of ["https://biletflow.example/events/7?promo=abc", "HTTP://x.y/z", "  https://a.b"]) assert.equal(looksLikeUrl(value), true, value);
   for (const value of ["T-5", "8f14e45f-ceea-467f-a0e6-5d7a0b4d1c2e", "BF.7.123", "httpcode"]) assert.equal(looksLikeUrl(value), false, value);
+});
+
+test("date filters accept a day or a range, and the weekend is computed in Almaty", () => {
+  assert.deepEqual(parseDateFilter("2027-12-11"), { from: "2027-12-11", to: "2027-12-11" });
+  assert.deepEqual(parseDateFilter("2027-12-12_2027-12-11"), { from: "2027-12-11", to: "2027-12-12" });
+  assert.equal(parseDateFilter("soon"), null);
+  assert.equal(weekendRange(new Date("2026-11-25T12:00:00+05:00")), "2026-11-28_2026-11-29"); // Wednesday
+  assert.equal(weekendRange(new Date("2026-11-28T23:30:00+05:00")), "2026-11-28_2026-11-29"); // Saturday night
+  assert.equal(weekendRange(new Date("2026-11-29T10:00:00+05:00")), "2026-11-29_2026-11-29"); // Sunday
+  assert.equal(weekendRange(new Date("2026-11-27T20:00:00Z")), "2026-11-28_2026-11-29"); // already Saturday in Almaty
+  assert.equal(eventOverlapsDays({ startTime: "2027-12-10T18:00:00", endTime: "2027-12-11T02:00:00" }, "2027-12-11", "2027-12-12"), true);
+  assert.equal(eventOverlapsDays({ startTime: "2027-12-10T18:00:00" }, "2027-12-11", "2027-12-12"), false);
+  assert.deepEqual(dateBadge("2027-12-10T18:00:00", "kk-KZ"), { day: "10", month: "жел" });
+  assert.equal(dateBadge("2027-12-10T18:00:00", "en-GB").month, "Dec");
 });
