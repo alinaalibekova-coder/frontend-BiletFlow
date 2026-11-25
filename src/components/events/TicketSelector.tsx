@@ -1,3 +1,4 @@
+import { scrollBehavior } from "../../lib/motion";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -126,7 +127,7 @@ export function TicketSelector({ eventId, types, onContinue, busy = false, block
   const openSeatsFor = (t: TicketType) => {
     const section = sections.find(s => s.ticketTypeId === t.id && s.kind === "SEATED" && s.onSale && s.available > 0);
     if (section) setActiveSectionId(section.id);
-    document.getElementById(`seat-map-${eventId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById(`seat-map-${eventId}`)?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
   };
 
   return <div className="mt-2 overflow-hidden rounded-xl border">

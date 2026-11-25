@@ -559,7 +559,7 @@ test("drafts have organizer preview links, a private-draft banner and disabled c
   assert.match(list,/href="\/events\/7\?preview=1"/);
   const html = await renderRoute("/events/7?preview=1&lang=en",organizer,[[["event",7],draft],[["ticket-types",7],[{ id:4,name:"Free",price:0,available:10 }]]]);
   assert.match(html,/Draft — not published/);
-  assert.match(html,/<button[^>]*disabled=""[^>]*>Choose tickets<\/button>/);
+  assert.match(html,/<button[^>]*disabled=""[^>]*>(?:<svg[\s\S]*?<\/svg>)?Choose tickets<\/button>/);
   assert.doesNotMatch(html,/Report event/);
 });
 
@@ -573,7 +573,7 @@ test("registration windows block both choosing and adding tickets, and display t
     assert.match(html,/Registration opens:/);
     assert.match(html,/Registration closes:/);
     assert.match(html,/Ends:/);
-    assert.match(html,/<button[^>]*disabled=""[^>]*>Choose tickets<\/button>/);
+    assert.match(html,/<button[^>]*disabled=""[^>]*>(?:<svg[\s\S]*?<\/svg>)?Choose tickets<\/button>/);
     assert.match(html,/<button[^>]*disabled=""[^>]*aria-label="Add a Free ticket"/);
   }
 });
@@ -812,4 +812,21 @@ test("the weekend chip filters by a date range and empty results offer a reset",
   const empty = await renderRoute("/?q=nothing-matches", null, catalogSeeds);
   assert.match(empty, /Ничего не найдено/);
   assert.match(empty, /<button[^>]*>Сбросить фильтры<\/button>/);
+});
+test("the event page has a poster header, map links, anchored sections, share, and sticky purchase panels", async () => {
+  const seeds = [[["event", 7], { ...event, paidSalesActive: true, description: "About", refundPolicy: "Refunds", venue: { id: 1, name: "Hall A", address: "Астана, Абая 1" } }],
+    [["ticket-types", 7], [{ id: 3, eventId: 7, name: "Standard", price: 5000, available: 10, sold: 0, quantity: 10, hidden: false }]]];
+  const html = (await renderRoute("/events/7", attendee, seeds)).replace(/<!-- -->/g, "");
+  assert.equal((html.match(/<h1[\s>]/g) ?? []).length, 1);
+  assert.match(html, /href="https:\/\/www\.google\.com\/maps\/search\/\?api=1&amp;query=%D0%90%D1%81%D1%82%D0%B0%D0%BD%D0%B0%2C%20%D0%90%D0%B1%D0%B0%D1%8F%201"/);
+  assert.match(html, /href="https:\/\/2gis\.kz\/search\//);
+  for (const anchor of ["about", "venue", "refund", "tickets"]) {
+    assert.match(html, new RegExp(`href="#${anchor}"`));
+    assert.match(html, new RegExp(`id="${anchor}"`));
+  }
+  assert.match(html, />Поделиться</);
+  assert.match(html, /aria-label="Покупка билетов"/);
+  assert.equal((html.match(/от 5[\s ]000 ₸/g) ?? []).length >= 2, true, "price in the sticky panel and the mobile bar");
+  assert.match(html, /Политика возврата/);
+  assert.match(html, /Задать вопрос о событии/);
 });

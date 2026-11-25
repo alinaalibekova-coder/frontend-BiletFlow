@@ -4,6 +4,7 @@ import { CheckInResultCard } from "../components/checkin/CheckInResultCard";
 import { CameraScanner } from "../components/checkin/CameraScanner";
 import { looksLikeUrl } from "../lib/checkInCode";
 import { UserSuspensionControls } from "../components/auth/UserSuspensionControls";
+import { scrollBehavior } from "../lib/motion";
 import { useLanguage } from "../i18n/LanguageContext";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -550,7 +551,7 @@ export function EventCheckInPage() {
       setScanMessage("");
       setLastResult(result);
       setCode("");
-      document.getElementById("check-in-result")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      document.getElementById("check-in-result")?.scrollIntoView({ behavior: scrollBehavior(), block: "nearest" });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["check-in-stats", eventId] }),
         queryClient.invalidateQueries({ queryKey: ["event-attendees", eventId] }),
