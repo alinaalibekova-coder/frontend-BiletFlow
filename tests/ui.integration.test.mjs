@@ -909,3 +909,11 @@ test("attendance shows check-in share as a labelled donut with counts", async ()
   assert.match(html, />75%</);
   assert.match(html, /Ещё не пришли: <strong>10</);
 });
+test("pages render inside one polite toast region and a reduced-motion-safe page transition", async () => {
+  const html = await renderRoute("/", null, catalogSeeds);
+  assert.equal((html.match(/aria-live="polite" role="status" class="pointer-events-none fixed/g) ?? []).length, 1);
+  assert.match(html, /class="animate-page-in"/);
+  const css = fs.readFileSync("src/index.css", "utf8");
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation-duration: 0\.01ms/);
+  assert.match(css, /:focus-visible \{\s*outline: 2px solid var\(--color-focus\)/);
+});

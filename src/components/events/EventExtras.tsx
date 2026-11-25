@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useToast } from "../ui/Toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { downloadCalendar, getCalendar, reportEvent, type ReportReason } from "../../api/platform";
 import { downloadBlob } from "../../lib/download";
@@ -44,22 +45,21 @@ export function ReportEventForm({ eventId }: { eventId: number }) {
 // Shares the event with the system share sheet where there is one, otherwise copies the link.
 export function ShareButton({ title }: { title: string }) {
   const { tx } = useLanguage();
-  const [status, setStatus] = useState("");
+  const toast = useToast();
   const share = async () => {
     const url = window.location.href.replace(/[?&]promo=[^&#]*/, "");
     try {
       if (typeof navigator.share === "function") { await navigator.share({ title, url }); return; }
       await navigator.clipboard.writeText(url);
-      setStatus(tx("Ссылка скопирована"));
+      toast(tx("Ссылка скопирована"));
     } catch (error) {
       // Closing the share sheet is not an error worth showing.
-      if (!(error instanceof DOMException && error.name === "AbortError")) setStatus(tx("Не удалось скопировать ссылку"));
+      if (!(error instanceof DOMException && error.name === "AbortError")) toast(tx("Не удалось скопировать ссылку"), "error");
     }
   };
-  return <>
+  return (
     <button type="button" onClick={() => void share()} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-white/15 px-4 text-sm font-semibold text-white ring-1 ring-white/25 hover:bg-white/25">
       <Icon name="share" className="h-4 w-4" />{tx("Поделиться")}
     </button>
-    <span role="status" className="text-sm text-white/90">{status}</span>
-  </>;
+  );
 }

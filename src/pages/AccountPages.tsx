@@ -1,4 +1,5 @@
 import { getAdminEvents } from "../api/platform";
+import { useToast } from "../components/ui/Toast";
 import { KpiCard } from "../components/ui/KpiCard";
 import { CalendarMenu } from "../components/events/EventExtras";
 import { CheckInResultCard } from "../components/checkin/CheckInResultCard";
@@ -65,9 +66,11 @@ export function MyAccountPage() {
     // so an already open QR code is hidden.
     refetchInterval: 60_000,
   });
+  const toast = useToast();
   const cancel = useMutation({
     mutationFn: (orderId: number) => cancelOrder(orderId),
-    onSuccess: async () => {
+    onSuccess: async (_, orderId) => {
+      toast(tx("Заказ №{0} отменён", [orderId]));
       await queryClient.invalidateQueries({ queryKey: ["my-orders"] });
       await queryClient.invalidateQueries({ queryKey: ["my-tickets"] });
     },
@@ -732,9 +735,10 @@ export function PlatformAdminPage() {
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
   const users = useQuery({ queryKey: ["admin-users", page, userFilters], queryFn: () => getUsers(page, PAGE_SIZE, userFilters) });
   const events = useQuery({ queryKey: ["admin-events"], queryFn: () => getAdminEvents({ page: 0, size: 100 }) });
+  const toast = useToast();
   const remove = useMutation({
     mutationFn: (userId: number) => deleteUser(userId),
-    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["admin-users"] }); },
+    onSuccess: async () => { toast(tx("Пользователь удалён")); await queryClient.invalidateQueries({ queryKey: ["admin-users"] }); },
   });
   const moderation = useMutation({
     mutationFn: ({ eventId, suspended, reason }: { eventId: number; suspended: boolean; reason?: string }) =>
@@ -859,9 +863,11 @@ function AdminUserCard({ user, pending, onDelete }: { user: User; pending: boole
       await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     },
   });
+  const toast = useToast();
   const updateRole = useMutation({
     mutationFn: (nextRole: string) => changeUserRole(user.id, nextRole),
     onSuccess: async () => {
+      toast(tx("Роль пользователя изменена"));
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
         queryClient.invalidateQueries({ queryKey: ["me"] }),

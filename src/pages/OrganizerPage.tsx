@@ -1,4 +1,5 @@
 import { getSeatingLayouts } from "../api/seating";
+import { useToast } from "../components/ui/Toast";
 import { Icon, type IconName } from "../components/ui/Icons";
 import { getAdminEvents } from "../api/platform";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -452,9 +453,10 @@ function PosterManager({ event }: { event: Event }) {
       await invalidateEvent();
     },
   });
+  const toast = useToast();
   const deleteMutation = useMutation({
     mutationFn: () => deleteEventPoster(event.id),
-    onSuccess: invalidateEvent,
+    onSuccess: async () => { toast(tx("Постер удалён")); await invalidateEvent(); },
   });
   const isPending = uploadMutation.isPending || deleteMutation.isPending;
   const validateFile = (selectedFile: File) => {
