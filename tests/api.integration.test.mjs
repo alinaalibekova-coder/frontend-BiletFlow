@@ -10,6 +10,7 @@ const bundle = await build({ stdin: { contents: `
   export * as sales from './src/api/sales';
   export { registrationState, nextRegistrationBoundary } from './src/lib/registration';
   export * as promo from './src/lib/promo';
+  export { createOpenerTracker } from './src/lib/focusReturn';
   export { looksLikeUrl } from './src/lib/checkInCode';
   export { minPrice, isBuyableNow } from './src/hooks/useEvents';
   export { formatCountdown, holdMilestone, eventVisibleUntil, eventCoversDay, formatTime, dayKey, parseDateFilter, weekendRange, eventOverlapsDays, dateBadge } from './src/lib/format';
@@ -31,7 +32,7 @@ const bundle = await build({ stdin: { contents: `
   export { startOrderPayment } from './src/lib/checkout';
   export { formatPrice, parseDate, formatLongDate, formatShortDate, weekdayShort, almatyTimestamp } from './src/lib/format';
 `, resolveDir: process.cwd() }, bundle: true, platform: "node", format: "esm", write: false });
-const { parseDateFilter, weekendRange, eventOverlapsDays, dateBadge, looksLikeUrl, nextRegistrationBoundary, promo, minPrice, isBuyableNow, formatCountdown, holdMilestone, eventVisibleUntil, eventCoversDay, formatTime, dayKey, categoryKey, categoryLabel, posterUrlThroughProxy, checkIn, orders, sales, registrationState, summarizeInventory, seating, platform, users, auth, commerce, support, notifications, events, catalog, venueForms, languageUtils, pageLanguage, client, startOrderPayment, formatPrice, parseDate, formatLongDate, formatShortDate, weekdayShort, almatyTimestamp } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+const { createOpenerTracker, parseDateFilter, weekendRange, eventOverlapsDays, dateBadge, looksLikeUrl, nextRegistrationBoundary, promo, minPrice, isBuyableNow, formatCountdown, holdMilestone, eventVisibleUntil, eventCoversDay, formatTime, dayKey, categoryKey, categoryLabel, posterUrlThroughProxy, checkIn, orders, sales, registrationState, summarizeInventory, seating, platform, users, auth, commerce, support, notifications, events, catalog, venueForms, languageUtils, pageLanguage, client, startOrderPayment, formatPrice, parseDate, formatLongDate, formatShortDate, weekdayShort, almatyTimestamp } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
 
 let expected;
 let requests;
@@ -666,4 +667,51 @@ test("date filters accept a day or a range, and the weekend is computed in Almat
   assert.equal(eventOverlapsDays({ startTime: "2027-12-10T18:00:00" }, "2027-12-11", "2027-12-12"), false);
   assert.deepEqual(dateBadge("2027-12-10T18:00:00", "kk-KZ"), { day: "10", month: "жел" });
   assert.equal(dateBadge("2027-12-10T18:00:00", "en-GB").month, "Dec");
+});
+
+// A fake element and a manual scheduler: the focus-return logic needs no DOM.
+const fakeElement = (name, log) => ({ name, isConnected: true, focus() { log.push(name); } });
+const manualScheduler = () => {
+  const queue = new Map(); let next = 1;
+  return { schedule: callback => { const id = next++; queue.set(id, callback); return id; }, cancel: id => queue.delete(id), flush: () => { for (const [id, callback] of [...queue]) { queue.delete(id); callback(); } } };
+};
+test("a dialog remembers the opener from before children autofocus and restores it on close", () => {
+  const log = [];
+  const timers = manualScheduler();
+  const tracker = createOpenerTracker(timers.schedule, timers.cancel);
+  const opener = fakeElement("opener", log);
+  const emailField = fakeElement("email", log);
+  tracker.render(false, opener);
+  tracker.render(true, opener);        // the render that opens the dialog
+  tracker.render(true, emailField);    // re-renders after autoFocus moved focus inside
+  assert.equal(tracker.opener, opener);
+  tracker.mounted();
+  tracker.closed();
+  assert.deepEqual(log, []);           // restored after the current tick, not during cleanup
+  timers.flush();
+  assert.deepEqual(log, ["opener"]);
+});
+test("StrictMode's extra effect cleanup does not steal focus from the dialog", () => {
+  const log = [];
+  const timers = manualScheduler();
+  const tracker = createOpenerTracker(timers.schedule, timers.cancel);
+  tracker.render(true, fakeElement("opener", log));
+  tracker.mounted(); tracker.closed(); tracker.mounted(); // StrictMode: setup, cleanup, setup
+  timers.flush();
+  assert.deepEqual(log, []);
+  tracker.closed(); tracker.render(false, null);          // real close
+  timers.flush();
+  assert.deepEqual(log, ["opener"]);
+});
+test("focus is not restored to an opener that left the page, and reopening records the new opener", () => {
+  const log = [];
+  const timers = manualScheduler();
+  const tracker = createOpenerTracker(timers.schedule, timers.cancel);
+  const removed = { ...fakeElement("cancel-order-button", log), isConnected: false };
+  tracker.render(true, removed); tracker.mounted(); tracker.closed(); tracker.render(false, null);
+  timers.flush();
+  assert.deepEqual(log, []);
+  tracker.render(true, fakeElement("second-opener", log)); tracker.mounted(); tracker.closed();
+  timers.flush();
+  assert.deepEqual(log, ["second-opener"]);
 });
