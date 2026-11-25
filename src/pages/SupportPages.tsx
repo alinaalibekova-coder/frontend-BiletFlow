@@ -8,6 +8,9 @@ import { useAuth } from "../auth/AuthContext";
 import { Button, buttonClass } from "../components/ui/Button";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { MutationError, Pagination } from "../components/ui/AsyncState";
+import { RefundOrderButton } from "../components/orders/RefundOrderButton";
+import { getEventOrders } from "../api/sales";
+import { formatPrice } from "../lib/format";
 
 const statuses: Record<SupportStatus, string> = { OPEN: "Открыто", IN_PROGRESS: "В работе", WAITING_FOR_CUSTOMER: "Ожидает ответа посетителя", RESOLVED: "Решено" };
 const categories: Record<SupportCategory, string> = { TICKET_DELIVERY: "Получение билета", PAYMENT: "Оплата", REFUND: "Вопрос о возврате", SEATING: "Места", EVENT_INFORMATION: "Информация о событии", CHECK_IN: "Проход на событие", ACCOUNT: "Аккаунт", ACTIVATION: "Активация продаж", TECHNICAL: "Техническая проблема", OTHER: "Другое" };
@@ -106,6 +109,9 @@ export function SupportCasePage() {
       <label className="block text-sm">{tx("Изменить статус")}<select value={item.status} disabled={busy} onChange={e => { const status = e.target.value as SupportStatus; action.mutate(() => setCaseStatus(id, status)); }} className="ml-3 rounded-lg border bg-white p-2">{Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{tx(label)}</option>)}</select></label>
       {!item.escalated && (platformAdmin || role === "ORGANIZER") && <Button variant="secondary" disabled={busy} onClick={() => action.mutate(() => escalateCase(id))}>{tx("Передать платформе")}</Button>}
     </section>}
+    {!isRequester && item.type === "ATTENDEE" && item.eventId != null && !!item.requesterEmail && (role === "ORGANIZER" || platformAdmin) && (
+      <CaseOrdersPanel eventId={item.eventId} requesterEmail={item.requesterEmail} orderId={item.orderId} />
+    )}
     <MutationError error={action.error} />
     <div className="space-y-3" aria-label={tx("Переписка")}>{detail.data.messages.map(message => <article key={message.id} className={`rounded-xl border p-4 ${message.fromStaff ? "bg-indigo-50" : "bg-surface"}`}><p className="text-sm font-semibold">{message.authorName}</p><p className="mt-2 whitespace-pre-wrap break-words text-sm">{message.body}</p><p className="mt-2 text-xs text-muted">{formatDateTime(message.createdAt, locale)}</p></article>)}</div>
     {item.status === "RESOLVED" && !isRequester ? <p className="text-sm">{tx("Чтобы ответить, сначала измените статус обращения.")}</p> : <form onSubmit={e => { e.preventDefault(); if (body.trim()) reply.mutate(); }} className="space-y-3">
@@ -113,5 +119,34 @@ export function SupportCasePage() {
       {item.status === "RESOLVED" && <p className="text-xs text-muted">{tx("Ваш ответ снова откроет обращение.")}</p>}
       <MutationError error={reply.error} /><Button type="submit" disabled={busy || !body.trim()}>{tx("Отправить ответ")}</Button>
     </form>}
+  </section>;
+}
+
+// The requester's orders for the case's event, so the organizer can refund right from the case.
+// The query key starts with "organizer-event-orders", so RefundOrderButton refreshes it after a refund.
+function CaseOrdersPanel({ eventId, requesterEmail, orderId }: { eventId: number; requesterEmail: string; orderId?: number }) {
+  const { tx, locale, statusLabel } = useLanguage();
+  const orders = useQuery({
+    queryKey: ["organizer-event-orders", "support-case", eventId, requesterEmail],
+    queryFn: () => getEventOrders(eventId, { query: requesterEmail, size: 50 }),
+  });
+  const email = requesterEmail.trim().toLowerCase();
+  const rows = (orders.data?.content ?? [])
+    .filter(order => order.buyerEmail.trim().toLowerCase() === email)
+    .filter(order => orderId == null || order.id === orderId);
+  return <section className="space-y-2 rounded-xl border p-4">
+    <h2 className="font-semibold">{orderId != null ? tx("Заказ посетителя") : tx("Заказы посетителя")}</h2>
+    {orders.isLoading && <p className="text-sm">{tx("Загрузка…")}</p>}
+    {orders.error && <ErrorMessage error={orders.error} onRetry={() => void orders.refetch()} />}
+    {orders.data && rows.length === 0 && <p className="text-sm text-muted">{tx("У посетителя нет заказов на это мероприятие.")}</p>}
+    {rows.map(order => <article key={order.id} className="rounded-lg bg-surface p-3 text-sm">
+      <div className="flex flex-wrap justify-between gap-2">
+        <strong>{tx("Заказ №")}{order.id}</strong>
+        <span>{formatPrice(order.totalAmount, locale)} · {statusLabel(order.status)}</span>
+      </div>
+      <p className="mt-1 text-xs text-muted">{formatDateTime(order.createdAt, locale)}</p>
+      <ul className="mt-2 text-xs">{order.items.map(i => <li key={i.ticketTypeId}>{i.ticketTypeName} × {i.quantity}</li>)}</ul>
+      {order.status === "PAID" && <RefundOrderButton orderId={order.id} totalAmount={order.totalAmount} />}
+    </article>)}
   </section>;
 }

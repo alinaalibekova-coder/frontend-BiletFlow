@@ -1,6 +1,6 @@
 import { getAdminEvents } from "../api/platform";
 import { useLanguage } from "../i18n/LanguageContext";
-import { useState, type FormEvent } from "react";
+import { Fragment, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -96,8 +96,8 @@ export function OrganizerSalesPage() {
           </div>
           <p className="text-sm text-muted">{tx("Комиссия обработки удерживается из дохода организатора и уже учтена в ожидаемой выплате.")}</p>
           {rows.map((row) => (
+            <Fragment key={row.eventId}>
             <EventSalesCard
-              key={row.eventId}
               row={row}
               expanded={selectedEventId === row.eventId}
               onToggle={() => {
@@ -108,8 +108,8 @@ export function OrganizerSalesPage() {
                 setSearchInput("");
               }}
             />
-          ))}
-          {selectedEventId !== null && (
+          {/* Details open right under the event they belong to, not after the whole list */}
+          {selectedEventId === row.eventId && (
             <section className="rounded-xl border p-4">
               <h3 className="text-lg font-semibold">{tx("Динамика и заказы")}</h3>
               <EventSalesAnalytics key={selectedEventId} eventId={selectedEventId}>{data => <EventSalesDetail sales={data} />}</EventSalesAnalytics>
@@ -159,6 +159,8 @@ export function OrganizerSalesPage() {
               </div>
             </section>
           )}
+            </Fragment>
+          ))}
         </>
       )}
     </div>
