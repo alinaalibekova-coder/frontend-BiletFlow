@@ -39,8 +39,17 @@ export function useTicketTypes(eventId: number, enabled = true) {
   });
 }
 
-// Cheapest ticket that is on sale, or null if there are none.
-export function minPrice(types: TicketType[] | undefined): number | null {
-  const prices = (types ?? []).filter((t) => !t.hidden).map((t) => t.price);
+// Whether a ticket type can be put in an order right now: listed, not sold out, inside its own
+// sales window, and not a paid type while the event's paid sales are inactive.
+export function isBuyableNow(type: TicketType, paidSalesActive?: boolean, now = Date.now()): boolean {
+  return !type.hidden && type.available > 0
+    && !(type.price > 0 && paidSalesActive === false)
+    && !(type.salesStart && parseDate(type.salesStart).getTime() > now)
+    && !(type.salesEnd && parseDate(type.salesEnd).getTime() <= now);
+}
+
+// Cheapest ticket that is on sale right now, or null if none can be bought.
+export function minPrice(types: TicketType[] | undefined, paidSalesActive?: boolean, now = Date.now()): number | null {
+  const prices = (types ?? []).filter((t) => isBuyableNow(t, paidSalesActive, now)).map((t) => t.price);
   return prices.length ? Math.min(...prices) : null;
 }

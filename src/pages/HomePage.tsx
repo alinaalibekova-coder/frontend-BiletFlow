@@ -5,9 +5,10 @@ import { EventCard, EventCardSkeleton } from "../components/events/EventCard";
 import { HeroBanner } from "../components/events/HeroBanner";
 import { DateStrip } from "../components/events/DateStrip";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
-import { categoryKey, categoryLabel, dayKey, parseDate } from "../lib/format";
+import { categoryKey, categoryLabel, eventCoversDay, eventVisibleUntil } from "../lib/format";
 import { useLanguage } from "../i18n/LanguageContext";
 import { cities, venueCity } from "../lib/cities";
+import { saveStoredPromo } from "../lib/promo";
 
 // Home page = the "event search" wireframe.
 // Filters live in the URL (?q=…&category=…&date=…) so links can be shared
@@ -21,7 +22,7 @@ export default function HomePage() {
   const [params, setParams] = useSearchParams();
   const { t, locale } = useLanguage();
   const promo = params.get("promo");
-  useEffect(() => { if (promo) sessionStorage.setItem("bf_promo", promo); }, [promo]);
+  useEffect(() => { if (promo) saveStoredPromo(promo); }, [promo]);
 
   const q = (params.get("q") ?? "").trim().toLowerCase();
   const category = params.get("category");
@@ -41,9 +42,9 @@ export default function HomePage() {
     setParams(next);
   };
 
-  // Hide events that already ended
+  // Hide events that already ended (events without an end time stay until the end of their day)
   const now = Date.now();
-  const upcoming = (events ?? []).filter((e) => parseDate(e.endTime ?? e.startTime).getTime() >= now);
+  const upcoming = (events ?? []).filter((e) => eventVisibleUntil(e) >= now);
 
   // Filtering happens here in the browser until the backend supports it
   const shown = upcoming.filter(
@@ -51,7 +52,7 @@ export default function HomePage() {
       (!q || e.title.toLowerCase().includes(q) || (e.venue?.name ?? "").toLowerCase().includes(q)) &&
       (!category || categoryKey(e.category) === categoryKey(category)) &&
       (!city || (city === "unknown" ? venueCity(e.venue) === null : venueCity(e.venue) === city)) &&
-      (!date || dayKey(parseDate(e.startTime)) === date),
+      (!date || eventCoversDay(e, date)),
   );
 
   const heading = q

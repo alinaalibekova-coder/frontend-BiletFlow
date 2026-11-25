@@ -32,6 +32,26 @@ interface Props {
 
 const SEATS_REFRESH_MS = 15_000;
 
+// Seat fill and the colour of the symbol drawn on it. Symbol contrast on each fill:
+// selected #111 + white 18.9:1, free emerald-500 + black 8.3:1 (hover emerald-400 10.9:1),
+// held amber-300 + black 14.6:1, yours blue-300 + black 11.7:1, sold gray-600 + white 7.6:1,
+// unavailable gray-200 + black 17:1.
+export function seatLook(status: Seat["status"], isSelected: boolean): { fill: string; text: string } {
+  if (isSelected) return { fill: "fill-brand", text: "fill-white" };
+  switch (status) {
+    case "AVAILABLE": return { fill: "fill-emerald-500 hover:fill-emerald-400 cursor-pointer", text: "fill-black" };
+    case "HELD": return { fill: "fill-amber-300", text: "fill-black" };
+    case "YOURS": return { fill: "fill-blue-300", text: "fill-black" };
+    case "SOLD": return { fill: "fill-gray-600", text: "fill-white" };
+    default: return { fill: "fill-gray-200", text: "fill-black" };
+  }
+}
+
+// The status symbol is always shown, so no state relies on colour alone (SRS 4.3.1).
+// Accessibility is a separate badge on the seat, never a replacement for the status.
+export const seatSymbol = (seat: Pick<Seat, "status" | "number">, isSelected: boolean) =>
+  isSelected ? "✓" : ({ AVAILABLE: String(seat.number), HELD: "…", YOURS: "Y", SOLD: "×", UNAVAILABLE: "—" })[seat.status];
+
 const pickable = (section: SeatSection) =>
   section.kind === "SEATED" && section.onSale && section.ticketTypeId !== null && section.available > 0;
 
@@ -254,16 +274,10 @@ function SectionSeats({ section, seats, selected, disabled, onToggle }: {
       {seats.map((seat) => {
         const isSelected = !!selected[seat.id];
         const free = seat.status === "AVAILABLE";
-        const look = isSelected
-          ? "fill-brand"
-          : free
-            ? "fill-emerald-500 hover:fill-emerald-700 cursor-pointer"
-            : seat.status === "HELD" || seat.status === "YOURS"
-              ? seat.status === "YOURS" ? "fill-blue-300" : "fill-amber-300"
-              : seat.status === "SOLD" ? "fill-gray-500" : "fill-gray-200";
+        const look = seatLook(seat.status, isSelected);
         const stateLabel = isSelected ? tx("Выбрано") : tx(({ AVAILABLE: "Свободно", HELD: "Зарезервировано другим покупателем", YOURS: "В вашем неоплаченном заказе", SOLD: "Продано", UNAVAILABLE: "Недоступно" })[seat.status]);
         const label = tx("Ряд {0}, место {1}", [seat.row, seat.number]) + (seat.accessible ? tx(", доступная среда") : "") + ", " + stateLabel;
-        const symbol = isSelected ? "✓" : seat.accessible ? "♿" : ({ AVAILABLE: String(seat.number), HELD: "…", YOURS: "Y", SOLD: "×", UNAVAILABLE: "—" })[seat.status];
+        const symbol = seatSymbol(seat, isSelected);
         return (
           <g key={seat.id}><circle
             key={seat.id}
@@ -276,11 +290,16 @@ function SectionSeats({ section, seats, selected, disabled, onToggle }: {
             aria-label={label}
             aria-pressed={isSelected}
             aria-disabled={!free && !isSelected}
-            strokeWidth={seat.accessible ? radius * 0.45 : 0}
-            className={`outline-none focus-visible:stroke-black ${seat.accessible ? "stroke-sky-600" : ""} ${look}`}
+            strokeWidth={radius * 0.3}
+            className={`outline-none stroke-transparent focus-visible:stroke-black ${look.fill}`}
           >
             <title>{label}</title>
-          </circle><text x={seat.x} y={seat.y} textAnchor="middle" dominantBaseline="central" fontSize={radius * 1.1} className="pointer-events-none fill-black" aria-hidden="true">{symbol}</text></g>
+          </circle><text x={seat.x} y={seat.y} textAnchor="middle" dominantBaseline="central" fontSize={radius * 1.1} className={`pointer-events-none ${look.text}`} aria-hidden="true">{symbol}</text>
+            {seat.accessible && <g aria-hidden="true" data-accessible-badge="true" className="pointer-events-none">
+              <circle cx={seat.x + radius * 0.78} cy={seat.y - radius * 0.78} r={radius * 0.45} className="fill-sky-700 stroke-white" strokeWidth={radius * 0.1} />
+              <text x={seat.x + radius * 0.78} y={seat.y - radius * 0.78} textAnchor="middle" dominantBaseline="central" fontSize={radius * 0.55} className="fill-white">♿</text>
+            </g>}
+          </g>
         );
       })}
     </svg>
@@ -289,19 +308,20 @@ function SectionSeats({ section, seats, selected, disabled, onToggle }: {
 
 function SeatLegend() {
   const { tx } = useLanguage();
-  const items: [string, string][] = [
-    ["bg-emerald-500", tx("Свободно")],
-    ["bg-brand", tx("Выбрано")],
-    ["bg-amber-300", tx("Зарезервировано другим покупателем")],
-    ["bg-blue-300", tx("В вашем неоплаченном заказе")],
-    ["bg-gray-500", tx("Продано")],
-    ["bg-gray-200", tx("Недоступно")],
-    ["bg-white ring-2 ring-sky-600", tx("Доступная среда")],
+  // The same fill and symbol as on the map, so the legend works without colour too.
+  const items: [string, string, string][] = [
+    ["bg-emerald-500 text-black", "1", tx("Свободно")],
+    ["bg-brand text-white", "✓", tx("Выбрано")],
+    ["bg-amber-300 text-black", "…", tx("Зарезервировано другим покупателем")],
+    ["bg-blue-300 text-black", "Y", tx("В вашем неоплаченном заказе")],
+    ["bg-gray-600 text-white", "×", tx("Продано")],
+    ["bg-gray-200 text-black", "—", tx("Недоступно")],
+    ["bg-sky-700 text-white", "♿", tx("Доступная среда (значок рядом с местом)")],
   ];
   return (
     <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted" aria-label={tx("Обозначения")}>
-      {items.map(([look, text]) => (
-        <li key={text} className="flex items-center gap-1.5"><span className={`inline-block h-3 w-3 rounded-full ${look}`} aria-hidden="true" />{text}</li>
+      {items.map(([look, symbol, text]) => (
+        <li key={text} className="flex items-center gap-1.5"><span className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[0.625rem] font-semibold leading-none ${look}`} aria-hidden="true">{symbol}</span>{text}</li>
       ))}
     </ul>
   );

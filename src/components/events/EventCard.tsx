@@ -8,14 +8,22 @@ import { cityLabel, venueCity } from "../../lib/cities";
 
 // One card in the "Популярные события" grid.
 export function EventCard({ event }: { event: Event }) {
-  const { t, locale, language } = useLanguage();
+  const { t, tx, locale, language } = useLanguage();
   const city = venueCity(event.venue);
-  // Until the backend sends `minPrice` on events, each card asks for its ticket types.
-  // When it does, the card uses that field and makes no request.
-  const serverPrice = event.minPrice !== undefined;
+  // The backend's minPrice is the cheapest visible ticket type. A number needs no request.
+  // null is ambiguous (no ticket types at all, or every type hidden), and older APIs omit it,
+  // so only those cards load their ticket types to say the same as the event page.
+  const serverPrice = typeof event.minPrice === "number";
   const { data: types } = useTicketTypes(event.id, !serverPrice);
-  const price = serverPrice ? event.minPrice ?? null : minPrice(types);
+  const price = serverPrice ? event.minPrice ?? null : minPrice(types, event.paidSalesActive);
   const ticketsNotRequired = !serverPrice && event.status === "PUBLISHED" && types !== undefined && types.length === 0;
+  const visibleTypes = (types ?? []).filter(type => !type.hidden);
+  const soldOut = visibleTypes.length > 0 && visibleTypes.every(type => type.available <= 0);
+  const priceText = ticketsNotRequired
+    ? t("noTicketsRequired")
+    : price !== null
+      ? price === 0 ? t("free") : t("fromPrice", { price: formatPrice(price, locale) })
+      : types === undefined ? "" : soldOut ? tx("Билеты закончились") : tx("Билеты пока недоступны");
 
   return (
     <Link
@@ -32,15 +40,7 @@ export function EventCard({ event }: { event: Event }) {
         </p>
         <p className="mt-1 text-xs text-muted">{city ? cityLabel(city, language) : t("unknownCity")}</p>
         <div className="mt-auto flex items-center justify-between pt-4">
-          <span className="text-sm font-semibold">
-            {ticketsNotRequired
-              ? t("noTicketsRequired")
-              : price === null
-                ? ""
-                : price === 0
-                  ? t("free")
-                  : t("fromPrice", { price: formatPrice(price, locale) })}
-          </span>
+          <span className="text-sm font-semibold">{priceText}</span>
           {!ticketsNotRequired && (
             <span className="rounded-md bg-surface px-3 py-1 text-xs font-semibold">{t("tickets")}</span>
           )}

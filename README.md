@@ -90,7 +90,10 @@ On the event page, checkout uses `POST /api/orders/quote` for the server's price
 and discount before `POST /api/orders` reserves inventory. The optional
 `attendeeName` and canonical `promoCode` are sent on creation. Campaign links
 `/events/{id}?promo=<token>` resolve through `/promo?token=` (typed codes use
-`?code=`); a `/?promo=` token is retained in the tab until an event is opened.
+`?code=`); an invalid promo from the event link shows its error. A `/?promo=` token is kept in
+`sessionStorage` (`bf_promo`) and tried on each event opened in that tab: an event that rejects it
+drops it silently and removes it, so it never blocks checkout; it is also removed after an order
+uses it or when the attendee clicks Remove.
 Free orders are normally PAID immediately. A legacy pending free order can
 still be confirmed through `/pay`.
 
@@ -101,6 +104,8 @@ The URL's success/failure hint never decides whether an order is paid.
 Failures remain visible, and users can retry or check the payment manually.
 The order page lists `/payments`, with demonstration records labelled clearly.
 Card details never pass through this frontend's API client.
+A PENDING order shows a live countdown to `expiresAt`; at zero the order is reloaded, payment is
+disabled and the expiry message is shown. Screen readers hear it at 5 minutes, 1 minute and expiry.
 
 The account lists attendee names and downloads PDF tickets as authenticated
 Blobs. Check-in search supports name, email and code. Monetary amounts retain
@@ -141,7 +146,9 @@ up to two fractional digits, including server-calculated promo discounts.
 
 All authorization must still be enforced by the backend. Signing out clears
 private query caches before another account is used. A 401, or a 403 carrying the explicit code ACCOUNT_SUSPENDED, clears
-the session and displays the server reason. Ordinary 403 responses preserve the session. Refunds, event history, account suspension,
+the session and displays the server reason. Ordinary 403 responses preserve the session. Signing in or out in
+one tab is followed by the others (a `storage` listener on `bf_token`), which also clear their caches;
+a 401 for a token another tab already replaced makes the tab re-read the saved token. Refunds, event history, account suspension,
 assigned seat selection and calendar export are integrated. Payouts remain simulated;
 the payout screens explicitly indicate that no money moves.
 
@@ -200,9 +207,14 @@ the frontend role check must never be treated as a security boundary.
 
 Temporary workarounds until the backend adds them:
 
-- **Search, date, city and category filters** run in the browser (`src/pages/HomePage.tsx`).
-- **Price on cards** uses `minPrice` when provided by the API. Until then, only mounted cards
-  request ticket types. The catalog initially mounts 24 cards and offers Show more.
+- **Search, date, city and category filters** run in the browser (`src/pages/HomePage.tsx`). The
+  backend catalog now accepts `q`, `category`, `venueId`, `from`/`to` and `priceMin`/`priceMax`, but
+  has no city field, so the frontend keeps one client-side filter set. Events without an end time
+  stay listed until the end of their start day (Asia/Almaty); a date matches every day an event spans.
+- **Price on cards** uses the backend's `EventResponse.minPrice` (cheapest non-hidden ticket type).
+  `null` means either no ticket types or only hidden ones, so only those cards load their ticket
+  types, to show "No tickets required" or "Tickets not available yet" exactly as the event page does.
+  The catalog initially mounts 24 cards and offers Show more.
 - **Catalog pagination** follows the initial backend page count without a hidden 50-page cutoff.
   Unexpected empty or repeated page numbers produce a retryable error instead of a false complete result.
   Category grouping and filtering normalize legacy case variants and known translated aliases;
@@ -285,8 +297,9 @@ src/
 
 - Event ownership is checked against the signed-in user ID, not the organizer profile ID.
   Owner/admin access to drafts is enforced by the backend; preview links never grant access.
-- Registration boundaries and event start are interpreted in Asia/Almaty. The event page
-  updates the registration state while open and checks it again before submitting an order.
+- Registration boundaries and event start are interpreted in Asia/Almaty (UTC+5; formatters use the
+  fixed zone `Etc/GMT-5` so browsers with pre-2024 tzdata agree with parsing). The event page sets one
+  timer for the next boundary (opening, closing or start) and checks again before submitting an order.
 - Cancelled-event ICS downloads use the authenticated calendar endpoint unchanged. The backend
   preserves the UID and increments SEQUENCE with STATUS:CANCELLED. A cancelled/refunded ticket
   alone does not imply that its event was cancelled; ticket calendars consult event metadata.
@@ -297,9 +310,9 @@ src/
   capacity minus sold and reserved tickets; section restrictions may further limit sales.
   Aggregate percentages use total sold divided by total known capacity, not an average of percentages.
   Missing capacities or remaining counts are displayed as unknown instead of invented zeros.
-- Suspension integration: the current backend ErrorResponse does not expose a machine code.
-  It must add code: ACCOUNT_SUSPENDED to suspension-related 403 responses for automatic logout.
-  The frontend supports top-level code or error.code and does not infer suspension from prose.
+- Suspension integration: the backend `ErrorResponse` carries a machine `code` (`exception/ErrorCode.java`);
+  a 403 with `code: ACCOUNT_SUSPENDED` signs the user out. The frontend reads top-level `code` or
+  `error.code` and does not infer suspension from prose.
 - Halyk accepts only the exact test and production payment-api.js URLs from the official
   payment-page documentation: https://epayment.kz/ru/docs/platezhnaya-stranica .
   Other hosts, paths, ports, credentials, query strings and fragments are rejected.
@@ -355,5 +368,5 @@ node tests/deployment.smoke.mjs
   a backend contract and CSRF/session design; it is not silently substituted here.
 - The web staff screen supports manual ticket codes and check-in from search. A separate RN/Expo app and
   camera-scanning compliance cannot be established from this repository. Optional GA4 is not enabled.
-- Backend work still needed: explicit ACCOUNT_SUSPENDED error codes; server-side catalog filtering and
-  minPrice; filtering financial sales totals and campaign attribution, beyond the currently filtered daily series.
+- Backend work still needed: a city field for server-side catalog filtering; filtering financial sales
+  totals and campaign attribution, beyond the currently filtered daily series.

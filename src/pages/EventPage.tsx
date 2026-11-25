@@ -11,7 +11,8 @@ import { minPrice, useEvent, useTicketTypes } from "../hooks/useEvents";
 import { Button } from "../components/ui/Button";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { categoryLabel, formatDateTime, formatLongDate, formatPrice, formatTime } from "../lib/format";
-import { registrationState } from "../lib/registration";
+import { nextRegistrationBoundary, registrationState } from "../lib/registration";
+import { clearStoredPromo, readStoredPromo } from "../lib/promo";
 import { TicketSelector } from "../components/events/TicketSelector";
 import { EventPoster } from "../components/events/EventPoster";
 
@@ -21,8 +22,17 @@ export default function EventPage() {
   const id = Number(useParams().id);
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const [storedPromo] = useState(() => sessionStorage.getItem("bf_promo") ?? "");
-  const initialPromo = params.get("promo") ?? storedPromo;
+  const urlPromo = params.get("promo") ?? "";
+  // A campaign token kept by the home page is read for each event the attendee opens. It is
+  // remembered together with the event id, so going straight from one event to another (same
+  // page component, new :id) never shows the previous event's token before it is read again.
+  const [stored, setStored] = useState<{ eventId: number; value: string } | null>(null);
+  useEffect(() => {
+    const value = urlPromo ? "" : readStoredPromo();
+    setStored(value ? { eventId: id, value } : null);
+  }, [id, urlPromo]);
+  const storedPromo = stored?.eventId === id ? stored.value : "";
+  const initialPromo = urlPromo || storedPromo;
   const { data: event, isLoading, error, refetch } = useEvent(id);
   const { data: types, isLoading: typesLoading } = useTicketTypes(id);
   const { user, isLoggedIn, openLogin } = useAuth();
@@ -30,13 +40,25 @@ export default function EventPage() {
   // Cancelled events disappear from public event details, but ticket holders retain calendar access.
   const cancelledCalendar = useQuery({ queryKey: ["calendar", id], queryFn: () => getCalendar(id), enabled: isLoggedIn && error instanceof ApiError && error.status === 404, retry: false });
   const [now, setNow] = useState(Date.now);
+  // Re-render only when registration can change state, then schedule the following boundary.
+  const startTime = event?.startTime;
+  const openingTime = event?.registrationOpeningTime;
+  const closingTime = event?.registrationClosingTime;
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
+    if (!startTime) return;
+    const next = nextRegistrationBoundary({ startTime, registrationOpeningTime: openingTime, registrationClosingTime: closingTime }, now);
+    if (next === null) return;
+    // Browsers fire timeouts longer than ~24.8 days immediately; such a wait just re-schedules.
+    const timer = window.setTimeout(() => setNow(Date.now()), Math.min(next - now, 2_147_000_000));
+    return () => window.clearTimeout(timer);
+  }, [startTime, openingTime, closingTime, now]);
   const orderMutation = useMutation({
     mutationFn: ({ items, details }: { items: OrderItemInput[]; details: CheckoutDetails }) => createOrder(id, items, details),
-    onSuccess: (order) => navigate(`/orders/${order.id}`),
+    onSuccess: (order, { details }) => {
+      // A carried-over campaign token is used up once an order applied it.
+      if (details.promoCode) clearStoredPromo();
+      navigate(`/orders/${order.id}`);
+    },
     // A picked seat may have been taken meanwhile: show the current seat map.
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: ["seat-map", id] });
@@ -61,7 +83,8 @@ export default function EventPage() {
   const visibleTypes = (types ?? []).filter((t) => !t.hidden);
   const ticketsNotRequired = event.status === "PUBLISHED" && !typesLoading && types?.length === 0;
   const posterNeedsAuth = event.status !== "PUBLISHED" || event.visibilityStatus === "PRIVATE";
-  const price = minPrice(types);
+  // Cheapest ticket that can be bought now; when none can, soldOut tells "sold out" from "not on sale yet".
+  const price = minPrice(types, event.paidSalesActive, now);
   const soldOut = visibleTypes.length > 0 && visibleTypes.every((t) => t.available <= 0);
   const registration = registrationState(event, now);
   const registrationMessage = registration === "not-open" ? tx("Регистрация ещё не открыта") : registration === "closed" ? tx("Регистрация закрыта") : registration === "started" ? tx("Событие уже началось") : "";
@@ -99,7 +122,7 @@ export default function EventPage() {
         />
 
         <div>
-          <p className="text-[11px] font-semibold uppercase text-muted">{categoryLabel(event.category, locale)}</p>
+          <p className="text-xs font-semibold uppercase text-muted">{categoryLabel(event.category, locale)}</p>
           <h1 className="mt-1 text-3xl font-bold">{event.title}</h1>
           <p className="mt-2 text-sm">
             {formatLongDate(event.startTime, locale)}, {formatTime(event.startTime)}
@@ -132,7 +155,7 @@ export default function EventPage() {
                     : ticketsNotRequired
                       ? tx("Билеты не требуются")
                       : price === null
-                        ? tx("Билеты пока недоступны")
+                        ? soldOut ? tx("Билеты закончились") : tx("Билеты пока недоступны")
                         : price === 0
                           ? tx("Бесплатно")
                           : tx("от {0}", [formatPrice(price, locale)])}
@@ -175,7 +198,7 @@ export default function EventPage() {
               {orderMutation.error instanceof Error ? tx(orderMutation.error.message) : tx("Не удалось создать заказ.")}
             </p>
           )}
-          <TicketSelector key={`${id}:${initialPromo}`} eventId={id} types={visibleTypes} initialPromo={initialPromo} paidSalesActive={event.paidSalesActive} seatingMode={event.seatingMode} blocked={event.suspended || event.status === "CANCELLED" || preview || registration !== "open"} onContinue={onContinue} busy={orderMutation.isPending} />
+          <TicketSelector key={`${id}:${initialPromo}`} eventId={id} types={visibleTypes} initialPromo={initialPromo} promoSource={urlPromo ? "url" : "stored"} paidSalesActive={event.paidSalesActive} seatingMode={event.seatingMode} blocked={event.suspended || event.status === "CANCELLED" || preview || registration !== "open"} onContinue={onContinue} busy={orderMutation.isPending} />
         </section>
       )}
       {!preview && <CalendarMenu eventId={id} cancelled={event.status === "CANCELLED"} />}

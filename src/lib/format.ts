@@ -1,7 +1,8 @@
 // Helpers for showing dates and prices the way the Figma design shows them.
-// Kazakhstan uses one time zone, so all times are shown in Asia/Almaty.
-
-const TZ = "Asia/Almaty";
+// Kazakhstan uses one time zone (UTC+5, Asia/Almaty since March 2024). parseDate reads backend
+// times as +05:00, so the formatters use the fixed-offset zone too: "Etc/GMT-5" is UTC+5 in every
+// browser, whereas a browser with tzdata older than 2024 would still show Asia/Almaty as UTC+6.
+const TZ = "Etc/GMT-5";
 const KAZAKH_MONTHS = ["қаңтар", "ақпан", "наурыз", "сәуір", "мамыр", "маусым", "шілде", "тамыз", "қыркүйек", "қазан", "қараша", "желтоқсан"];
 const KAZAKH_WEEKDAYS = ["Жс", "Дс", "Сс", "Ср", "Бс", "Жм", "Сб"];
 function kazakhDate(iso: string, includeYear: boolean) {
@@ -53,6 +54,20 @@ export function formatDateTime(iso: string, locale = "ru-RU"): string {
 // "2026-10-24" — used to compare days in the date strip
 export function dayKey(date: Date): string {
   return new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: TZ }).format(date);
+}
+
+// When an event leaves the catalog: its end, or for events without an end time, the end
+// of its start day in Kazakhstan, so an evening concert stays listed while it is on.
+export function eventVisibleUntil(event: { startTime: string; endTime?: string | null }): number {
+  if (event.endTime) return parseDate(event.endTime).getTime();
+  return parseDate(`${dayKey(parseDate(event.startTime))}T23:59:59.999`).getTime();
+}
+
+// Whether an event takes place on a day ("2026-10-24"): every day from its start to its end counts.
+export function eventCoversDay(event: { startTime: string; endTime?: string | null }, day: string): boolean {
+  const first = dayKey(parseDate(event.startTime));
+  const last = event.endTime ? dayKey(parseDate(event.endTime)) : first;
+  return first <= day && day <= (last < first ? first : last);
 }
 
 // "Пн"
@@ -130,4 +145,19 @@ export function eventCategoryOptions(current?: string | null): { value: string; 
   if (index >= 0) options[index] = { value: current, legacy: false };
   else options.push({ value: current, legacy: true });
   return options;
+}
+
+// "04:59" for a reservation countdown; whole minutes may exceed 59 ("75:00").
+export function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+// Screen readers hear the countdown only when it crosses these points, not every second.
+export type HoldMilestone = "expired" | "1min" | "5min" | null;
+export function holdMilestone(ms: number): HoldMilestone {
+  if (ms <= 0) return "expired";
+  if (ms <= 60_000) return "1min";
+  if (ms <= 300_000) return "5min";
+  return null;
 }

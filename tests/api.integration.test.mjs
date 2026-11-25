@@ -8,7 +8,10 @@ const bundle = await build({ stdin: { contents: `
   export { categoryKey, categoryLabel } from './src/lib/format';
   export { posterUrlThroughProxy } from './src/lib/posterUrl';
   export * as sales from './src/api/sales';
-  export { registrationState } from './src/lib/registration';
+  export { registrationState, nextRegistrationBoundary } from './src/lib/registration';
+  export * as promo from './src/lib/promo';
+  export { minPrice, isBuyableNow } from './src/hooks/useEvents';
+  export { formatCountdown, holdMilestone, eventVisibleUntil, eventCoversDay, formatTime, dayKey } from './src/lib/format';
   export { summarizeInventory } from './src/lib/salesInventory';
   export * as seating from './src/api/seating';
   export * as platform from './src/api/platform';
@@ -27,7 +30,7 @@ const bundle = await build({ stdin: { contents: `
   export { startOrderPayment } from './src/lib/checkout';
   export { formatPrice, parseDate, formatLongDate, formatShortDate, weekdayShort, almatyTimestamp } from './src/lib/format';
 `, resolveDir: process.cwd() }, bundle: true, platform: "node", format: "esm", write: false });
-const { categoryKey, categoryLabel, posterUrlThroughProxy, checkIn, orders, sales, registrationState, summarizeInventory, seating, platform, users, auth, commerce, support, notifications, events, catalog, venueForms, languageUtils, pageLanguage, client, startOrderPayment, formatPrice, parseDate, formatLongDate, formatShortDate, weekdayShort, almatyTimestamp } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+const { nextRegistrationBoundary, promo, minPrice, isBuyableNow, formatCountdown, holdMilestone, eventVisibleUntil, eventCoversDay, formatTime, dayKey, categoryKey, categoryLabel, posterUrlThroughProxy, checkIn, orders, sales, registrationState, summarizeInventory, seating, platform, users, auth, commerce, support, notifications, events, catalog, venueForms, languageUtils, pageLanguage, client, startOrderPayment, formatPrice, parseDate, formatLongDate, formatShortDate, weekdayShort, almatyTimestamp } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
 
 let expected;
 let requests;
@@ -550,4 +553,97 @@ test("check-in scans send the ticket code and undo returns the updated ticket", 
   assert.equal(scanned.ticket.id, 5);
   request("/api/check-in/events/7/tickets/5/undo", "POST", undefined, { id: 5, status: "VALID" });
   assert.equal((await checkIn.undoEventCheckIn(7, 5)).status, "VALID");
+});
+
+// ---- Review fixes (phase 1) ----
+test("a stale stored promo that another event rejects never blocks checkout and is consumed", () => {
+  const stored = { value: "CAMPAIGN-A", token: true, source: "stored" };
+  const rejected = { data: undefined, error: new client.ApiError(400, "Promo code not found", "PROMO_CODE_INVALID"), isFetching: false };
+  assert.equal(promo.promoAllowsCheckout(stored, rejected), true);
+  assert.equal(promo.promoAllowsCheckout(stored, { data: undefined, error: null, isFetching: true }), true);
+  assert.equal(promo.appliedPromoCode(stored, rejected), undefined);
+  assert.equal(promo.shouldDropStoredPromo(stored, rejected.error), true);
+  // A network failure says nothing about the promo itself: keep it, but still do not block.
+  assert.equal(promo.shouldDropStoredPromo(stored, new client.ApiError(0, "offline")), false);
+  assert.equal(promo.appliedPromoCode(stored, { data: { code: "SPRING" }, error: null, isFetching: false }), "SPRING");
+});
+test("a promo from the event link or typed by the attendee must be valid before checkout", () => {
+  const rejected = { data: undefined, error: new client.ApiError(400, "Promo code not found"), isFetching: false };
+  for (const source of ["url", "typed"]) {
+    const chosen = { value: "BAD", token: source === "url", source };
+    assert.equal(promo.promoAllowsCheckout(chosen, rejected), false);
+    assert.equal(promo.shouldDropStoredPromo(chosen, rejected.error), false);
+    assert.equal(promo.promoAllowsCheckout(chosen, { data: { code: "BAD" }, error: null, isFetching: false }), true);
+  }
+  assert.equal(promo.promoAllowsCheckout({ value: "", token: false, source: "typed" }, rejected), true);
+});
+test("a non-JSON success response becomes a friendly localized ApiError", async () => {
+  globalThis.fetch = async (path, options = {}) => { assert.equal(options.headers.Authorization, "Bearer test-token"); return new Response("<!doctype html><html></html>", { status: 200, headers: { "Content-Type": "text/html" } }); };
+  await assert.rejects(events.getEvent(7), e => e instanceof client.ApiError && e.code === "INVALID_RESPONSE" && /неожиданный ответ/.test(e.message)
+    && pageLanguage.translateText("en", e.message).startsWith("The server sent an unexpected response")
+    && pageLanguage.translateText("kk", e.message).startsWith("Сервер күтпеген"));
+});
+test("a 401 for a token another tab already replaced asks the app to re-read the saved token", async () => {
+  let changes = 0, failures = 0;
+  const stopChange = client.onStoredTokenChange(() => { changes++; });
+  const stopFailure = client.onAuthFailure(() => { failures++; });
+  try {
+    globalThis.fetch = async () => { localStorage.setItem("bf_token", "other-tab-token"); return new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 }); };
+    await assert.rejects(events.getEvent(7), e => e.status === 401);
+    assert.equal(changes, 1);
+    assert.equal(failures, 0);
+    assert.equal(localStorage.getItem("bf_token"), "other-tab-token");
+    // The same token still saved: this tab's own session ended, so it signs out.
+    globalThis.fetch = async () => new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 });
+    await assert.rejects(events.getEvent(7), e => e.status === 401);
+    assert.equal(failures, 1);
+    assert.equal(localStorage.getItem("bf_token"), null);
+  } finally { stopChange(); stopFailure(); }
+});
+test("hold countdown formatting and screen-reader milestones", () => {
+  assert.equal(formatCountdown(299_001), "05:00");
+  assert.equal(formatCountdown(61_000), "01:01");
+  assert.equal(formatCountdown(-5), "00:00");
+  assert.equal(holdMilestone(600_000), null);
+  assert.equal(holdMilestone(300_000), "5min");
+  assert.equal(holdMilestone(59_000), "1min");
+  assert.equal(holdMilestone(0), "expired");
+});
+test("events without an end time stay listed until the end of their Almaty start day; dates match the whole span", () => {
+  assert.equal(eventVisibleUntil({ startTime: "2026-11-25T19:00:00" }), Date.parse("2026-11-25T23:59:59.999+05:00"));
+  assert.equal(eventVisibleUntil({ startTime: "2026-11-25T19:00:00", endTime: "2026-11-25T21:00:00" }), Date.parse("2026-11-25T21:00:00+05:00"));
+  const festival = { startTime: "2026-11-25T10:00:00", endTime: "2026-11-27T22:00:00" };
+  assert.equal(eventCoversDay(festival, "2026-11-24"), false);
+  assert.equal(eventCoversDay(festival, "2026-11-26"), true);
+  assert.equal(eventCoversDay(festival, "2026-11-27"), true);
+  assert.equal(eventCoversDay({ startTime: "2026-11-25T23:30:00" }, "2026-11-25"), true);
+});
+test("formatters use fixed UTC+5 so they agree with parseDate", () => {
+  assert.equal(formatTime("2026-11-25T20:00:00"), "20:00");
+  assert.equal(formatTime("2026-11-25T15:00:00Z"), "20:00");
+  assert.equal(dayKey(parseDate("2026-11-25T23:30:00")), "2026-11-25");
+});
+test("the event page timer targets the next registration boundary instead of ticking every second", () => {
+  const now = Date.parse("2026-11-25T12:00:00+05:00");
+  const event = { startTime: "2026-12-01T19:00:00", registrationOpeningTime: "2026-11-26T09:00:00", registrationClosingTime: "2026-11-30T23:00:00" };
+  assert.equal(nextRegistrationBoundary(event, now), Date.parse("2026-11-26T09:00:00+05:00"));
+  assert.equal(nextRegistrationBoundary(event, Date.parse("2026-11-27T00:00:00+05:00")), Date.parse("2026-11-30T23:00:00+05:00") + 1);
+  assert.equal(nextRegistrationBoundary(event, Date.parse("2026-12-01T00:00:00+05:00")), Date.parse("2026-12-01T19:00:00+05:00"));
+  assert.equal(nextRegistrationBoundary(event, Date.parse("2026-12-02T00:00:00+05:00")), null);
+});
+test("the cheapest price counts only ticket types that can be bought now", () => {
+  const now = Date.parse("2026-11-25T12:00:00+05:00");
+  const base = { eventId: 7, quantity: 10, sold: 0, available: 10, hidden: false };
+  const types = [
+    { ...base, id: 1, price: 500, hidden: true },
+    { ...base, id: 2, price: 1000, available: 0 },
+    { ...base, id: 3, price: 1500, salesStart: "2026-11-26T00:00:00" },
+    { ...base, id: 4, price: 2000, salesEnd: "2026-11-25T11:00:00" },
+    { ...base, id: 5, price: 3000 },
+  ];
+  assert.equal(minPrice(types, true, now), 3000);
+  assert.equal(minPrice(types, false, now), null);
+  assert.equal(minPrice([...types, { ...base, id: 6, price: 0 }], false, now), 0);
+  assert.equal(isBuyableNow(types[2], true, Date.parse("2026-11-26T00:00:01+05:00")), true);
+  assert.equal(minPrice(undefined), null);
 });

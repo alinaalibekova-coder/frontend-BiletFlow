@@ -31,11 +31,11 @@ await build({ stdin: { contents: `
     client.clear();
     return html;
   }
-  export async function renderSeatMap(map, seats) {
+  export async function renderSeatMap(map, seats, selected = {}) {
     const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
     client.setQueryData(['seat-section', 7, 1], { section: map.sections[0], seats });
     const stream = await renderToReadableStream(React.createElement(QueryClientProvider, { client },
-      React.createElement(SeatMapPicker, { eventId: 7, map, selected: {}, activeSectionId: 1, onSelectSection() {}, onToggle() {}, onSeatsGone() {} })));
+      React.createElement(SeatMapPicker, { eventId: 7, map, selected, activeSectionId: 1, onSelectSection() {}, onToggle() {}, onSeatsGone() {} })));
     await stream.allReady;
     const html = await new Response(stream).text();
     client.clear();
@@ -53,14 +53,19 @@ await build({ stdin: { contents: `
   export function renderSalesDetail(sales) {
     return renderToString(React.createElement(EventSalesDetail, { sales }));
   }
-  export async function renderRoute(url, user, seeds = [], storedLanguage) {
+  // errorSeeds: [queryKey, Error] pairs rendered as failed queries (not refetched on mount).
+  export async function renderRoute(url, user, seeds = [], storedLanguage, { errorSeeds = [], session = {} } = {}) {
     const storage = new Map(user ? [['bf_token', 'ui-test-token']] : []);
     if (storedLanguage) storage.set('bf_language', storedLanguage);
     globalThis.localStorage = { getItem: key => storage.get(key) ?? null };
-    globalThis.sessionStorage = { getItem: () => null };
+    globalThis.sessionStorage = { getItem: key => session[key] ?? null };
     const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
     if (user) client.setQueryData(['me', 'ui-test-token'], user);
     for (const [key, value] of seeds) client.setQueryData(key, value);
+    for (const [key, error] of errorSeeds) {
+      client.setQueryDefaults(key, { retryOnMount: false });
+      client.getQueryCache().build(client, { queryKey: key }).setState({ status: 'error', error, errorUpdatedAt: Date.now(), fetchStatus: 'idle' });
+    }
     const stream = await renderToReadableStream(React.createElement(QueryClientProvider, { client },
       React.createElement(MemoryRouter, { initialEntries: [url] },
         React.createElement(AuthProvider, null, React.createElement(App)))));
@@ -626,4 +631,61 @@ test("event sales explain processing fees and label net revenue after refunds", 
   assert.match(html,/Комиссия обработки удерживается из дохода организатора/);
   assert.doesNotMatch(html,/>После скидок<\/p>/);
   assert.match(html,/6.?800/);
+});
+
+// ---- Review fixes (phase 1) ----
+const almatyLocal = ms => new Date(Date.now() + 5 * 3600_000 + ms).toISOString().slice(0, 19);
+const buyable = [[["event", 7], { ...event, paidSalesActive: true }], [["ticket-types", 7], [{ id: 3, eventId: 7, name: "Standard", price: 5000, available: 10, sold: 0, quantity: 10, hidden: false }]]];
+test("an invalid promo from the event link shows its error", async () => {
+  const html = await renderRoute("/events/7?promo=BAD-TOKEN", attendee, buyable, undefined, {
+    errorSeeds: [[["promo-preview", 7, "BAD-TOKEN", true], new Error("Промокод не найден")]],
+  });
+  assert.match(html, /role="alert"[^>]*>Промокод не найден/);
+  assert.match(html, /value="BAD-TOKEN"/);
+});
+test("a promo stored by another campaign link is never shown or applied on the first render of an event", async () => {
+  const html = await renderRoute("/events/7", attendee, buyable, undefined, { session: { bf_promo: "OTHER-EVENT-TOKEN" } });
+  assert.doesNotMatch(html, /OTHER-EVENT-TOKEN/);
+  assert.doesNotMatch(html, /role="alert"/);
+});
+test("selected seats show a white checkmark and sold accessible seats keep their status symbol", async () => {
+  const section = { id: 1, key: "A", name: "North stand", kind: "SEATED", onSale: true, ticketTypeId: 4, ticketTypeName: "Standard", price: 1000, available: 2, x: 0, y: 0, width: 100, height: 40 };
+  const seats = [
+    { id: 1, row: "A", number: 1, x: 10, y: 20, accessible: false, status: "AVAILABLE" },
+    { id: 2, row: "A", number: 2, x: 20, y: 20, accessible: true, status: "SOLD" },
+    { id: 3, row: "A", number: 3, x: 30, y: 20, accessible: true, status: "AVAILABLE" },
+  ];
+  const selected = { 1: { id: 1, sectionId: 1, sectionName: "North stand", row: "A", number: 1, ticketTypeId: 4, ticketTypeName: "Standard", price: 1000 } };
+  const html = await renderSeatMap({ eventId: 7, width: 100, height: 40, sections: [section] }, seats, selected);
+  assert.match(html, /class="pointer-events-none fill-white"[^>]*>✓</);
+  assert.match(html, /class="pointer-events-none fill-white"[^>]*>×</);
+  assert.match(html, /class="pointer-events-none fill-black"[^>]*>3</);
+  assert.equal((html.match(/data-accessible-badge="true"/g) ?? []).length, 2);
+  assert.match(html, /Ряд A, место 2, доступная среда, Продано/);
+  assert.match(html, /значок рядом с местом/);
+});
+test("a pending order shows a live reservation countdown and warns under two minutes", async () => {
+  const seeds = minutes => [[["order", 42], { ...order, expiresAt: almatyLocal(minutes * 60_000) }], [["order-payments", 42], []]];
+  const calm = await renderRoute("/orders/42", attendee, seeds(10));
+  assert.match(calm, /Билеты зарезервированы ещё/);
+  assert.match(calm, /<time[^>]*>(10:00|09:5\d)<\/time>/);
+  assert.doesNotMatch(calm, /data-hold-warning/);
+  assert.equal((calm.match(/<main/g) ?? []).length, 1);
+  const urgent = await renderRoute("/orders/42", attendee, seeds(1.5));
+  assert.match(urgent, /data-hold-warning="true"/);
+  assert.match(urgent, /Осталось меньше 2 минут/);
+  assert.match(urgent, /<time[^>]*>01:(30|2\d)<\/time>/);
+});
+test("an expired hold disables payment and shows the expiry message", async () => {
+  const html = await renderRoute("/orders/42", attendee, [[["order", 42], { ...order, expiresAt: almatyLocal(-60_000) }], [["order-payments", 42], []]]);
+  assert.match(html, /disabled=""[^>]*>Оплатить заказ</);
+  assert.match(html, /Срок действия заказа истёк/);
+  assert.match(html, /Проверить оплату/);
+});
+test("event cards match the event page when the server minPrice is null", async () => {
+  const cards = [{ ...event, id: 7, title: "No tickets", minPrice: null }, { ...event, id: 8, title: "Hidden tickets", minPrice: null }, { ...event, id: 9, title: "Priced", minPrice: 2500 }];
+  const html = await renderRoute("/", null, [[["events"], page(cards)], [["ticket-types", 7], []], [["ticket-types", 8], [{ id: 1, eventId: 8, name: "Hidden", price: 100, available: 5, hidden: true }]]]);
+  assert.match(html, /Билеты не требуются/);
+  assert.match(html, /Билеты пока недоступны/);
+  assert.match(html, /от 2[\s ]500 ₸/);
 });
