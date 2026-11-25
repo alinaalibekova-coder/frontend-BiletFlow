@@ -1,8 +1,10 @@
 import { getSeatingLayouts } from "../api/seating";
+import { useToast } from "../components/ui/Toast";
+import { Icon, type IconName } from "../components/ui/Icons";
 import { getAdminEvents } from "../api/platform";
 import { useLanguage } from "../i18n/LanguageContext";
-import { useState, type FormEvent, type ReactNode } from "react";
-import { Link, NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createEvent,
@@ -40,6 +42,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Button, buttonClass } from "../components/ui/Button";
 import { BecomeOrganizerForm } from "../components/auth/BecomeOrganizerForm";
 import { Modal } from "../components/ui/Modal";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { EventPoster } from "../components/events/EventPoster";
 import { EventSuspensionDialog } from "../components/events/EventSuspensionDialog";
 import { formatTicketSalesEnd, getEventTicketSaleState, getTicketSaleState } from "../lib/ticketSales";
@@ -241,38 +244,56 @@ function AccessMessage({ title, detail, action }: { title: string; detail: strin
 export function OrganizerDashboardLayout() {
   const { tx } = useLanguage();
   const base = useDashboardBase();
+  const { pathname } = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => setMenuOpen(false), [pathname]);
   const platformAdmin = base === "/admin/dashboard";
-  const tabs = [
-    ...(platformAdmin ? [{ to: `${base}/overview`, label: tx("Обзор платформы") }, ...[["orders", "Заказы"], ["payments", "Платежи"], ["refunds", "Возвраты"], ["campaigns", "Промокампании"], ["reports", "Жалобы на события"], ["settings", "Настройки платформы"], ["venues", "Схемы площадок"]].map(([path,label]) => ({ to: `${base}/${path}`, label: tx(label) }))] : []),
-    { to: `${base}/payouts`, label: tx("Выплаты") },
-    { to: `${base}/events`, label: platformAdmin ? tx("Все мероприятия") : tx("Мои мероприятия") },
-    ...(!platformAdmin ? [{ to: `${base}/create`, label: tx("Создать мероприятие") }] : []),
-    { to: `${base}/manage`, label: tx("Управление") },
-    { to: `${base}/sales`, label: tx("Продажи") },
-    ...(platformAdmin ? [{ to: `${base}/verification`, label: tx("Заявки организаторов") }, { to: `${base}/activations`, label: tx("Платные продажи") }, { to: `${base}/support`, label: tx("Эскалации") }] : [{ to: "/support", label: tx("Поддержка") }]),
-    { to: "/staff", label: tx("Check-in") },
+  const tabs: { to: string; label: string; icon: IconName }[] = [
+    ...(platformAdmin ? [{ to: `${base}/overview`, label: tx("Обзор платформы"), icon: "chart" as IconName }, ...([["orders", "Заказы", "ticket"], ["payments", "Платежи", "wallet"], ["refunds", "Возвраты", "undo"], ["campaigns", "Промокампании", "sparkle"], ["reports", "Жалобы на события", "flag"], ["settings", "Настройки платформы", "settings"], ["venues", "Схемы площадок", "map"]] as const).map(([path, label, icon]) => ({ to: `${base}/${path}`, label: tx(label), icon: icon as IconName }))] : []),
+    { to: `${base}/payouts`, label: tx("Выплаты"), icon: "briefcase" },
+    { to: `${base}/events`, label: platformAdmin ? tx("Все мероприятия") : tx("Мои мероприятия"), icon: "calendar" },
+    ...(!platformAdmin ? [{ to: `${base}/create`, label: tx("Создать мероприятие"), icon: "sparkle" as IconName }] : []),
+    { to: `${base}/manage`, label: tx("Управление"), icon: "settings" },
+    { to: `${base}/sales`, label: tx("Продажи"), icon: "chart" },
+    ...(platformAdmin ? [{ to: `${base}/verification`, label: tx("Заявки организаторов"), icon: "shield" as IconName }, { to: `${base}/activations`, label: tx("Платные продажи"), icon: "wallet" as IconName }, { to: `${base}/support`, label: tx("Эскалации"), icon: "help" as IconName }] : [{ to: "/support", label: tx("Поддержка"), icon: "help" as IconName }]),
+    { to: "/staff", label: tx("Check-in"), icon: "scan" },
   ];
+  const navLabel = platformAdmin ? tx("Разделы панели администратора") : tx("Разделы кабинета организатора");
 
   return (
-    <section>
-      <div className="mb-6">
-        <p className="text-sm text-muted">{platformAdmin ? tx("Панель платформенного администратора") : tx("Кабинет организатора")}</p>
-        <h1 className="mt-1 text-2xl font-bold">{platformAdmin ? tx("Управление всеми мероприятиями") : tx("Управление событиями")}</h1>
+    <section className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+      <aside className="lg:sticky lg:top-4 lg:self-start">
+        <div className="rounded-[var(--radius-card)] bg-ink p-4 text-white shadow-lifted">
+          <p className="text-xs font-semibold uppercase tracking-wide text-white/70">{platformAdmin ? tx("Панель платформенного администратора") : tx("Кабинет организатора")}</p>
+          <p className="mt-1 text-lg font-bold leading-snug">{platformAdmin ? tx("Управление всеми мероприятиями") : tx("Управление событиями")}</p>
+          <button type="button" aria-expanded={menuOpen} aria-controls="dashboard-nav" onClick={() => setMenuOpen(open => !open)}
+            className="mt-3 flex min-h-10 w-full items-center justify-between rounded-lg bg-white/10 px-3 text-sm font-semibold hover:bg-white/20 lg:hidden">
+            <span className="flex items-center gap-2"><Icon name="menu" className="h-4 w-4" />{navLabel}</span>
+            <Icon name="chevronDown" className={`h-4 w-4 transition-transform ${menuOpen ? "rotate-180" : ""}`} />
+          </button>
+        </div>
+        <nav id="dashboard-nav" aria-label={navLabel} className={`${menuOpen ? "block" : "hidden"} mt-3 rounded-[var(--radius-card)] border border-gray-200 bg-white p-2 shadow-soft lg:block`}>
+          <ul className="space-y-0.5">
+            {tabs.map((tab) => (
+              <li key={tab.to}>
+                <NavLink
+                  to={tab.to}
+                  className={({ isActive }) =>
+                    `flex min-h-10 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold ${isActive ? "bg-primary text-white" : "text-brand hover:bg-primary-soft hover:text-primary-dark"}`
+                  }
+                >
+                  <Icon name={tab.icon} className="h-4 w-4" />
+                  {tab.label}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </aside>
+      <div className="min-w-0">
+        <h1 className="sr-only">{platformAdmin ? tx("Управление всеми мероприятиями") : tx("Управление событиями")}</h1>
+        <Outlet />
       </div>
-      <nav aria-label={platformAdmin ? tx("Разделы панели администратора") : tx("Разделы кабинета организатора")} className="mb-6 flex gap-2 overflow-x-auto border-b pb-3">
-        {tabs.map((tab) => (
-          <NavLink
-            key={tab.to}
-            to={tab.to}
-            className={({ isActive }) =>
-              `whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold ${isActive ? "bg-black text-white" : "bg-surface hover:bg-gray-200"}`
-            }
-          >
-            {tab.label}
-          </NavLink>
-        ))}
-      </nav>
-      <Outlet />
     </section>
   );
 }
@@ -416,6 +437,7 @@ function PosterManager({ event }: { event: Event }) {
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [validationError, setValidationError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const invalidateEvent = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["event", event.id] }),
@@ -431,9 +453,10 @@ function PosterManager({ event }: { event: Event }) {
       await invalidateEvent();
     },
   });
+  const toast = useToast();
   const deleteMutation = useMutation({
     mutationFn: () => deleteEventPoster(event.id),
-    onSuccess: invalidateEvent,
+    onSuccess: async () => { toast(tx("Постер удалён")); await invalidateEvent(); },
   });
   const isPending = uploadMutation.isPending || deleteMutation.isPending;
   const validateFile = (selectedFile: File) => {
@@ -447,6 +470,16 @@ function PosterManager({ event }: { event: Event }) {
 
   return (
     <section className="space-y-4 rounded-xl border p-5">
+      <ConfirmDialog
+        open={confirmDelete}
+        title={tx("Удалить постер этого события?")}
+        message={tx("Посетители увидят обложку-заглушку, пока вы не загрузите новый постер.")}
+        confirmLabel={tx("Удалить постер")}
+        cancelLabel={tx("Оставить постер")}
+        destructive
+        onConfirm={() => { deleteMutation.mutate(); setConfirmDelete(false); }}
+        onCancel={() => setConfirmDelete(false)}
+      />
       <div>
         <h3 className="font-semibold">{tx("Постер события")}</h3>
         <p className="mt-1 text-sm text-muted">{tx("JPEG, PNG или WebP, не более 5 МБ.")}</p>
@@ -499,9 +532,7 @@ function PosterManager({ event }: { event: Event }) {
                 type="button"
                 variant="secondary"
                 disabled={isPending}
-                onClick={() => {
-                  if (window.confirm(tx("Удалить постер этого события?"))) deleteMutation.mutate();
-                }}
+                onClick={() => setConfirmDelete(true)}
               >
                 {deleteMutation.isPending ? tx("Удаляем…") : tx("Удалить постер")}
               </Button>
@@ -1325,6 +1356,7 @@ export function ManageOrganizerEventsPage() {
   const [phase, setPhase] = useState<EventPhase | "">("");
   const { profile, events, platformAdmin } = useOrganizerEvents(page, phase || undefined);
   const [actionError, setActionError] = useState("");
+  const [cancelTarget, setCancelTarget] = useState<{ id: number; title: string } | null>(null);
   const duplication = useMutation({
     mutationFn: (eventId: number) => duplicateEvent(eventId),
     onSuccess: async (copy) => {
@@ -1390,6 +1422,16 @@ export function ManageOrganizerEventsPage() {
 
   return (
     <QueryState loading={(!platformAdmin && profile.isLoading) || events.isLoading} error={(platformAdmin ? null : profile.error) ?? events.error} onRetry={retry}>
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        title={tx("Отменить событие «{0}»?", [cancelTarget?.title ?? ""])}
+        message={tx("Посетители увидят, что событие отменено. Отмену нельзя вернуть.")}
+        confirmLabel={tx("Отменить событие")}
+        cancelLabel={tx("Не отменять")}
+        destructive
+        onConfirm={() => { if (cancelTarget) mutation.mutate({ eventId: cancelTarget.id, action: "cancel" }); setCancelTarget(null); }}
+        onCancel={() => setCancelTarget(null)}
+      />
       {suspensionTarget && <EventSuspensionDialog
         key={suspensionTarget.id}
         event={suspensionTarget}
@@ -1401,9 +1443,8 @@ export function ManageOrganizerEventsPage() {
       <Modal
         open={eventPendingPublish !== null}
         onClose={() => setEventPendingPublish(null)}
-        title={tx("Опубликовать событие без билетов?")}
+        title={tx("У события нет доступных билетов")}
       >
-        <h2 className="text-xl font-bold">{tx("У события нет доступных билетов")}</h2>
         <p className="mt-3 text-sm text-muted">
           {eventPendingPublish?.title ? tx("«{0}» будет опубликовано", [eventPendingPublish.title]) : tx("Событие будет опубликовано")} {tx(" без доступных билетов. Посетители увидят событие, но пока не смогут купить билеты.")}</p>
         <div className="mt-5 flex flex-col gap-3">
@@ -1516,11 +1557,7 @@ export function ManageOrganizerEventsPage() {
                   <Button variant="secondary" disabled={mutation.isPending} onClick={() => mutation.mutate({ eventId: event.id, action: "unpublish" })}>{tx("Снять")}</Button>
                 )}
                 {!platformAdmin && event.status !== "CANCELLED" && (
-                  <Button variant="secondary" disabled={mutation.isPending} onClick={() => {
-                    if (window.confirm(tx("Отменить событие «{0}»?", [event.title]))) {
-                      mutation.mutate({ eventId: event.id, action: "cancel" });
-                    }
-                  }}>{tx("Отменить")}</Button>
+                  <Button variant="secondary" disabled={mutation.isPending} onClick={() => setCancelTarget({ id: event.id, title: event.title })}>{tx("Отменить")}</Button>
                 )}
               </div>
             </article>
@@ -1542,7 +1579,7 @@ function FormField({ label, children }: { label: string; children: ReactNode }) 
   );
 }
 
-const fieldClass = "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand";
+const fieldClass = "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary";
 
 function formatDate(value: string, locale = "ru-RU") {
   return formatDateTime(value, locale);

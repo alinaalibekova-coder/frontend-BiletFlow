@@ -5,9 +5,12 @@ import { EventCard, EventCardSkeleton } from "../components/events/EventCard";
 import { HeroBanner } from "../components/events/HeroBanner";
 import { DateStrip } from "../components/events/DateStrip";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
-import { categoryKey, categoryLabel, dayKey, parseDate } from "../lib/format";
+import { categoryKey, categoryLabel, eventOverlapsDays, eventVisibleUntil, parseDateFilter } from "../lib/format";
+import { EmptyState } from "../components/ui/EmptyState";
+import { Button } from "../components/ui/Button";
 import { useLanguage } from "../i18n/LanguageContext";
 import { cities, venueCity } from "../lib/cities";
+import { saveStoredPromo } from "../lib/promo";
 
 // Home page = the "event search" wireframe.
 // Filters live in the URL (?q=…&category=…&date=…) so links can be shared
@@ -19,13 +22,14 @@ const CARDS_PER_STEP = 24;
 export default function HomePage() {
   const { data: events, isLoading, error, refetch } = usePublicEvents();
   const [params, setParams] = useSearchParams();
-  const { t, locale } = useLanguage();
+  const { t, tx, locale } = useLanguage();
   const promo = params.get("promo");
-  useEffect(() => { if (promo) sessionStorage.setItem("bf_promo", promo); }, [promo]);
+  useEffect(() => { if (promo) saveStoredPromo(promo); }, [promo]);
 
   const q = (params.get("q") ?? "").trim().toLowerCase();
   const category = params.get("category");
   const date = params.get("date");
+  const dateRange = parseDateFilter(date);
   const cityParam = params.get("city");
   const city = cityParam === "unknown" || cities.some(item => item.id === cityParam) ? cityParam : null;
   const hasFilters = !!(q || category || date || city);
@@ -34,6 +38,7 @@ export default function HomePage() {
   const [shownCount, setShownCount] = useState({ key: filterKey, count: CARDS_PER_STEP });
   const visibleCount = shownCount.key === filterKey ? shownCount.count : CARDS_PER_STEP;
 
+  const resetFilters = () => { const next = new URLSearchParams(params); for (const key of ["q", "category", "date", "city"]) next.delete(key); setParams(next); };
   const setDate = (day: string | null) => {
     const next = new URLSearchParams(params);
     if (day) next.set("date", day);
@@ -41,9 +46,9 @@ export default function HomePage() {
     setParams(next);
   };
 
-  // Hide events that already ended
+  // Hide events that already ended (events without an end time stay until the end of their day)
   const now = Date.now();
-  const upcoming = (events ?? []).filter((e) => parseDate(e.endTime ?? e.startTime).getTime() >= now);
+  const upcoming = (events ?? []).filter((e) => eventVisibleUntil(e) >= now);
 
   // Filtering happens here in the browser until the backend supports it
   const shown = upcoming.filter(
@@ -51,7 +56,7 @@ export default function HomePage() {
       (!q || e.title.toLowerCase().includes(q) || (e.venue?.name ?? "").toLowerCase().includes(q)) &&
       (!category || categoryKey(e.category) === categoryKey(category)) &&
       (!city || (city === "unknown" ? venueCity(e.venue) === null : venueCity(e.venue) === city)) &&
-      (!date || dayKey(parseDate(e.startTime)) === date),
+      (!dateRange || eventOverlapsDays(e, dateRange.from, dateRange.to)),
   );
 
   const heading = q
@@ -62,13 +67,17 @@ export default function HomePage() {
 
   return (
     <>
-      {!hasFilters && upcoming[0] && <HeroBanner event={upcoming[0]} />}
+      {!hasFilters && upcoming.length > 0 && <HeroBanner events={upcoming.slice(0, 3)} />}
       <DateStrip selected={date} onSelect={setDate} />
 
-      <h2 className="mb-4 mt-8 text-xl font-bold">{heading}</h2>
+      {/* The page's only h1, with or without the banner and filters. */}
+      <div className="mb-4 mt-8 flex flex-wrap items-end justify-between gap-2">
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">{heading}</h1>
+        {!isLoading && shown.length > 0 && <p className="text-sm text-muted">{tx("Найдено событий: {0}", [shown.length])}</p>}
+      </div>
 
       {isLoading && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 8 }, (_, i) => (
             <EventCardSkeleton key={i} />
           ))}
@@ -78,14 +87,16 @@ export default function HomePage() {
       {error && <ErrorMessage error={error} onRetry={() => refetch()} />}
 
       {!isLoading && !error && shown.length === 0 && (
-        <p className="rounded-xl bg-surface p-6 text-center text-sm text-muted">
-          {hasFilters ? t("noResults") : t("noEvents")}
-        </p>
+        <EmptyState
+          icon={hasFilters ? "search" : "calendar"}
+          title={hasFilters ? t("noResults") : t("noEvents")}
+          action={hasFilters ? <Button onClick={resetFilters}>{t("resetFilters")}</Button> : undefined}
+        />
       )}
-      {hasFilters && <button type="button" onClick={() => { const next = new URLSearchParams(params); for (const key of ["q", "category", "date", "city"]) next.delete(key); setParams(next); }} className="mb-4 mt-3 text-sm underline">{t("resetFilters")}</button>}
+      {hasFilters && shown.length > 0 && <button type="button" onClick={resetFilters} className="mb-4 text-sm font-semibold text-primary-dark underline">{t("resetFilters")}</button>}
 
       {shown.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {shown.slice(0, visibleCount).map((e) => (
             <EventCard key={e.id} event={e} />
           ))}
@@ -96,7 +107,7 @@ export default function HomePage() {
           <button
             type="button"
             onClick={() => setShownCount({ key: filterKey, count: visibleCount + CARDS_PER_STEP })}
-            className="rounded-lg border px-5 py-2 text-sm font-semibold hover:bg-surface"
+            className="rounded-full border border-primary px-6 py-2.5 text-sm font-semibold text-primary-dark hover:bg-primary-soft"
           >
             {t("showMore")}
           </button>

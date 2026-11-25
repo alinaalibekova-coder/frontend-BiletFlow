@@ -1,4 +1,8 @@
 import { getAdminEvents } from "../api/platform";
+import { StatusBadge } from "../components/ui/StatusBadge";
+import type { IconName } from "../components/ui/Icons";
+import { KpiCard } from "../components/ui/KpiCard";
+import { DailySalesChart, TicketTypeSalesChart } from "../components/analytics/Charts";
 import { useLanguage } from "../i18n/LanguageContext";
 import { Fragment, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -138,7 +142,7 @@ export function OrganizerSalesPage() {
                       <article key={order.id} className="rounded-lg bg-surface p-3 text-sm">
                         <div className="flex flex-wrap justify-between gap-2">
                           <strong>{tx("Заказ №")}{order.id} · {order.buyerEmail}</strong>
-                          <span>{formatPrice(order.totalAmount, locale)} · {statusLabel(order.status)}</span>
+                          <span className="flex items-center gap-2">{formatPrice(order.totalAmount, locale)} <StatusBadge status={order.status} /></span>
                         </div>
                         <p className="mt-1 text-xs text-muted">
                           {order.ticketCount} {tx(" бил. · Создан ")}{formatDateTime(order.createdAt, locale)}
@@ -175,7 +179,7 @@ function EventSalesCard({ row, expanded, onToggle, toggleLabel }: { row: EventSa
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold">{row.eventTitle}</h3>
-          <p className="mt-1 text-sm text-muted">{formatShortDate(row.startTime, locale)} · {statusLabel(row.status)}{row.suspended ? tx(" · Приостановлено") : ""}</p>
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">{formatShortDate(row.startTime, locale)} <StatusBadge status={row.status} />{row.suspended && <StatusBadge status="SUSPENDED" />}</p>
         </div>
         <div className="flex gap-2">
           <Link to={`${base}/events/${row.eventId}/staff`} className={buttonClass("secondary")}>{tx("Сотрудники")}</Link>
@@ -218,37 +222,26 @@ function EventSalesCard({ row, expanded, onToggle, toggleLabel }: { row: EventSa
 
 export function EventSalesDetail({ sales }: { sales: EventSales }) {
   const { tx, locale } = useLanguage();
-  const maxDailyRevenue = Math.max(0, ...sales.salesByDay.map((day) => day.revenue));
   return (
     <div className="mt-4">
       <InventoryMetrics capacity={sales.capacity} ticketsRemaining={sales.ticketsRemaining} percentSold={sales.percentSold} />
-      <div className="grid gap-2 sm:grid-cols-4">
-        <Metric label={tx("Выручка")} value={formatPrice(sales.revenue, locale)} />
-        <Metric label={tx("Оплачено заказов")} value={String(sales.paidOrders)} />
-        <Metric label={tx("Отменено заказов")} value={String(sales.cancelledOrders)} />
-        <Metric label={tx("Истекло заказов")} value={String(sales.expiredOrders)} />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Metric icon="wallet" label={tx("Выручка")} value={formatPrice(sales.revenue, locale)} />
+        <Metric icon="check" label={tx("Оплачено заказов")} value={String(sales.paidOrders)} />
+        <Metric icon="x" label={tx("Отменено заказов")} value={String(sales.cancelledOrders)} />
+        <Metric icon="clock" label={tx("Истекло заказов")} value={String(sales.expiredOrders)} />
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-4">
-        <Metric label={tx("Скидки")} value={formatPrice(sales.discounts, locale)} />
-        <Metric label={tx("После скидок и возвратов")} value={formatPrice(sales.netRevenue, locale)} />
-        <Metric label={tx("Комиссии")} value={formatPrice(sales.processingFees, locale)} />
-        <Metric label={tx("Ожидаемая выплата (симуляция)")} value={formatPrice(sales.estimatedPayout, locale)} />
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Metric icon="ticket" label={tx("Скидки")} value={formatPrice(sales.discounts, locale)} />
+        <Metric icon="chart" label={tx("После скидок и возвратов")} value={formatPrice(sales.netRevenue, locale)} />
+        <Metric icon="settings" label={tx("Комиссии")} value={formatPrice(sales.processingFees, locale)} />
+        <Metric icon="briefcase" label={tx("Ожидаемая выплата (симуляция)")} value={formatPrice(sales.estimatedPayout, locale)} />
       </div>
       <p className="mt-3 text-sm text-muted">{tx("Комиссия обработки удерживается из дохода организатора и уже учтена в ожидаемой выплате.")}</p>
-      <h4 className="mt-5 font-semibold">{tx("Продажи по дням")}</h4>
-      {sales.salesByDay.length === 0 ? <p className="mt-2 text-sm text-muted">{tx("Данных о продажах пока нет.")}</p> : (
-        <div className="mt-2 space-y-2">
-          {sales.salesByDay.map((day) => (
-            <div key={day.date} className="grid grid-cols-[90px_1fr_auto] items-center gap-3 text-xs">
-              <span>{formatLongDate(day.date, locale)}</span>
-              <div className="h-3 overflow-hidden rounded bg-surface">
-                <div className="h-full rounded bg-black" style={{ width: `${maxDailyRevenue > 0 ? Math.max(day.revenue / maxDailyRevenue * 100, day.revenue > 0 ? 2 : 0) : 0}%` }} />
-              </div>
-              <span className="whitespace-nowrap">{formatPrice(day.revenue, locale)} · {day.ticketsSold} {tx(" бил.")}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {sales.salesByDay.length === 0
+        ? <><h4 className="mt-5 font-semibold">{tx("Продажи по дням")}</h4><p className="mt-2 text-sm text-muted">{tx("Данных о продажах пока нет.")}</p></>
+        : <DailySalesChart days={sales.salesByDay} />}
+      {(sales.ticketTypes ?? []).length > 0 && <TicketTypeSalesChart types={sales.ticketTypes} />}
     </div>
   );
 }
@@ -292,7 +285,7 @@ export function AdminEventSalesPage() {
         </form>
         {orders.isLoading && <LoadingState />}{orders.error && <ErrorState error={orders.error} onRetry={() => void orders.refetch()} />}
         {orders.data?.content.length === 0 && <p className="text-sm">{tx("Заказов нет.")}</p>}
-        {orders.data?.content.map(order => <article key={order.id} className="rounded-lg bg-surface p-3 text-sm"><p className="font-semibold">№{order.id} · {order.buyerEmail}</p>{order.attendeeName && <p>{tx("Посетитель: ")}{order.attendeeName}</p>}<p>{statusLabel(order.status)} · {formatPrice(order.totalAmount, locale)} {tx(" · Билетов: ")}{order.ticketCount}</p><OrderItemsList items={order.items} className="mt-1 text-xs" /> {order.status === "PAID" && <RefundOrderButton orderId={order.id} totalAmount={order.totalAmount} />}</article>)}
+        {orders.data?.content.map(order => <article key={order.id} className="rounded-lg bg-surface p-3 text-sm"><p className="font-semibold">№{order.id} · {order.buyerEmail}</p>{order.attendeeName && <p>{tx("Посетитель: ")}{order.attendeeName}</p>}<p className="flex flex-wrap items-center gap-2"><StatusBadge status={order.status} /> {formatPrice(order.totalAmount, locale)} {tx(" · Билетов: ")}{order.ticketCount}</p><OrderItemsList items={order.items} className="mt-1 text-xs" /> {order.status === "PAID" && <RefundOrderButton orderId={order.id} totalAmount={order.totalAmount} />}</article>)}
         <OrdersPagination page={orderPage} totalPages={orders.data?.totalPages ?? 0} onChange={setOrderPage} />
       </section>
     </>}
@@ -388,9 +381,9 @@ function StaffRow({ person, pending, onRemove }: { person: EventStaff; pending: 
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, icon }: { label: string; value: string; icon?: IconName }) {
   const { tx } = useLanguage();
-  return <div className="rounded-xl bg-surface p-4"><p className="text-xs text-muted">{tx(label)}</p><p className="mt-1 text-xl font-bold">{value}</p></div>;
+  return <KpiCard icon={icon} label={tx(label)} value={value} />;
 }
 
 function LoadingState() {

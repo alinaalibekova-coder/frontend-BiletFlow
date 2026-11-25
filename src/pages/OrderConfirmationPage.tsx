@@ -10,7 +10,10 @@ import { useAuth } from "../auth/AuthContext";
 import { Button, buttonClass } from "../components/ui/Button";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { CalendarMenu } from "../components/events/EventExtras";
-import { formatPrice, formatDateTime } from "../lib/format";
+import { formatPrice, formatDateTime, parseDate } from "../lib/format";
+import { HoldCountdown } from "../components/orders/HoldCountdown";
+import { CheckoutSteps } from "../components/orders/CheckoutSteps";
+import { StatusBadge } from "../components/ui/StatusBadge";
 
 const statusLabels: Record<OrderStatus, string> = {
   PENDING: "Ожидает подтверждения",
@@ -26,6 +29,9 @@ export default function OrderConfirmationPage({ paymentResult = false }: { payme
   const queryClient = useQueryClient();
   const { isLoggedIn, openLogin } = useAuth();
   const [session, setSession] = useState<PaymentSession | null>(null);
+  // Set when the hold countdown reaches zero, before the backend has marked the order EXPIRED.
+  const [holdExpired, setHoldExpired] = useState(false);
+  const [openedAt] = useState(Date.now);
   const order = useQuery({
     queryKey: ["order", orderId],
     queryFn: () => paymentResult ? checkPayment(orderId) : getOrder(orderId),
@@ -81,21 +87,28 @@ export default function OrderConfirmationPage({ paymentResult = false }: { payme
   }
 
   const currentOrder = order.data;
-  const canConfirm = currentOrder.status === "PENDING";
+  const pending = currentOrder.status === "PENDING";
+  const holdOver = pending && (holdExpired || (!!currentOrder.expiresAt && parseDate(currentOrder.expiresAt).getTime() <= openedAt));
+  const canConfirm = pending && !holdOver;
+  const onHoldExpired = () => {
+    setHoldExpired(true);
+    void order.refetch();
+  };
   const isFree = currentOrder.totalAmount === 0;
 
   return (
-    <main className="mx-auto max-w-2xl">
+    <section className="mx-auto max-w-2xl" aria-labelledby="order-title">
+      <CheckoutSteps current={currentOrder.status === "PAID" ? 3 : 2} failed={["CANCELLED", "EXPIRED"].includes(currentOrder.status) || holdOver} />
       <p className="text-sm text-muted">{tx("Заказ №")}{currentOrder.id}</p>
-      <h1 className="mt-1 text-2xl font-bold">
+      <h1 id="order-title" className="mt-1 text-2xl font-bold">
         {currentOrder.status === "PAID" ? tx("Заказ подтверждён") : tx("Подтверждение заказа")}
       </h1>
       <p className="mt-2 text-sm text-muted">{currentOrder.eventTitle}</p>
       {currentOrder.attendeeName && <p className="mt-2 text-sm">{tx("Посетитель: ")}{currentOrder.attendeeName}</p>}
-      {currentOrder.status === "PENDING" && currentOrder.expiresAt && <p className="mt-2 text-sm text-muted">{tx("Резерв до ")}{formatDateTime(currentOrder.expiresAt, locale)}</p>}
+      {pending && currentOrder.expiresAt && <HoldCountdown expiresAt={currentOrder.expiresAt} createdAt={currentOrder.createdAt} onExpire={onHoldExpired} />}
       {paymentResult && currentOrder.status === "PENDING" && <p role="status" className="mt-4 rounded-lg bg-amber-50 p-4 text-sm">{tx("Проверяем оплату. Билеты появятся после подтверждения банка. Статус обновляется автоматически.")}</p>}
 
-      <section className="mt-6 rounded-xl border p-5" aria-label={tx("Состав заказа")}>
+      <section className="mt-6 rounded-[var(--radius-card)] border border-gray-200 bg-white p-5 shadow-soft" aria-label={tx("Состав заказа")}>
         <div className="space-y-3">
           {currentOrder.items.map((item, index) => (
             <div key={item.seatId ?? `${item.ticketTypeId}-${index}`} className="flex justify-between gap-4 text-sm">
@@ -109,7 +122,7 @@ export default function OrderConfirmationPage({ paymentResult = false }: { payme
           <span>{tx("Итого")}</span>
           <span>{formatPrice(currentOrder.totalAmount, locale)}</span>
         </div>
-        <p className="mt-3 text-sm text-muted">{tx("Статус: ")}{tx(statusLabels[currentOrder.status])}</p>
+        <p className="mt-3 flex items-center gap-2 text-sm text-muted">{tx("Статус: ")}<StatusBadge status={currentOrder.status} label={tx(statusLabels[currentOrder.status])} /></p>
       </section>
 
       {currentOrder.status === "PAID" && (
@@ -125,7 +138,7 @@ export default function OrderConfirmationPage({ paymentResult = false }: { payme
       {currentOrder.status === "REFUNDED" && (
         <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{tx("Организатор вернул деньги за этот заказ. Билеты больше не действуют.")}</p>
       )}
-      {currentOrder.status === "EXPIRED" && (
+      {(currentOrder.status === "EXPIRED" || holdOver) && (
         <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{tx("Срок действия заказа истёк. Создайте новый заказ.")}</p>
       )}
       {confirmation.error && (
@@ -137,8 +150,8 @@ export default function OrderConfirmationPage({ paymentResult = false }: { payme
       {session?.simulated && <p role="status" className="mt-4 rounded-lg bg-amber-50 p-3 text-sm">{tx("Демонстрационная оплата: реальные деньги не списываются.")}</p>}
 
       <div className="mt-5 flex flex-wrap gap-3">
-        {canConfirm && (
-          <Button disabled={confirmation.isPending || check.isPending} onClick={() => confirmation.mutate()}>
+        {pending && (
+          <Button disabled={!canConfirm || confirmation.isPending || check.isPending} onClick={() => confirmation.mutate()}>
             {confirmation.isPending
               ? tx("Подтверждаем…")
               : isFree
@@ -146,7 +159,7 @@ export default function OrderConfirmationPage({ paymentResult = false }: { payme
                 : tx("Оплатить заказ")}
           </Button>
         )}
-        {canConfirm && <Button variant="secondary" disabled={check.isPending || confirmation.isPending} onClick={() => check.mutate()}>{check.isPending ? tx("Проверяем…") : tx("Проверить оплату")}</Button>}
+        {pending && <Button variant="secondary" disabled={check.isPending || confirmation.isPending} onClick={() => check.mutate()}>{check.isPending ? tx("Проверяем…") : tx("Проверить оплату")}</Button>}
         <Link to="/account" className={buttonClass("secondary")}>{tx("Мои билеты")}</Link>
         <Link to={`/events/${currentOrder.eventId}`} className={buttonClass("secondary")}>
           {tx("Вернуться к событию")}</Link>
@@ -171,7 +184,7 @@ export default function OrderConfirmationPage({ paymentResult = false }: { payme
         </article>)}
       </section>
       <Link to={`/support/new?orderId=${orderId}`} className="mt-5 inline-block text-sm underline">{tx("Помощь с заказом")}</Link>
-    </main>
+    </section>
   );
 }
 

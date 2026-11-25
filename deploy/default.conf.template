@@ -9,7 +9,8 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    # Camera only for this origin: the staff check-in page can scan ticket QR codes (BarcodeDetector).
+    add_header Permissions-Policy "camera=(self), microphone=(), geolocation=()" always;
     # React uses inline styles for charts and seat maps; scripts still require an allowed source.
     # The bank's own payment/3DS iframe has its own policy.
     add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://test-epay.epayment.kz/payform/payment-api.js https://epay.homebank.kz/payform/payment-api.js; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: ${BACKEND_ORIGIN}; font-src 'self' data:; connect-src 'self' ${BACKEND_ORIGIN} https://test-epay.epayment.kz https://epay.homebank.kz https://test-epay-api.epayment.kz https://epay-api.homebank.kz; frame-src https://test-epay.epayment.kz https://epay.homebank.kz; form-action 'self' https://test-epay.epayment.kz https://epay.homebank.kz; base-uri 'self'; object-src 'none'; frame-ancestors 'none'" always;

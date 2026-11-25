@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { CheckInDonut } from "./Charts";
+import { KpiCard } from "../ui/KpiCard";
 import { useQuery } from "@tanstack/react-query";
 import { getEventAttendance } from "../../api/sales";
 import type { ArrivalInterval } from "../../api/types";
@@ -75,16 +77,15 @@ export function EventAttendancePanel({ eventId }: { eventId: number }) {
 
       {data && (
         <>
-          <div className="mt-3 grid gap-3 sm:grid-cols-4">
-            <Figure label={tx("Владельцы билетов")} value={data.ticketHolders.toLocaleString(locale)} />
-            <Figure label={tx("Прошли check-in")} value={data.checkedIn.toLocaleString(locale)} />
-            <Figure label={absentLabel} value={data.absent.toLocaleString(locale)} />
-            <Figure label={tx("Процент check-in")} value={`${data.checkInRate}%`} />
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard icon="users" label={tx("Владельцы билетов")} value={data.ticketHolders.toLocaleString(locale)} />
+            <KpiCard icon="check" label={tx("Прошли check-in")} value={data.checkedIn.toLocaleString(locale)} />
+            <KpiCard icon="clock" label={absentLabel} value={data.absent.toLocaleString(locale)} />
+            <KpiCard icon="chart" label={tx("Процент check-in")} value={`${data.checkInRate}%`} />
           </div>
 
-          {/* Progress bar: the text above already says the same, so screen readers skip it */}
-          <div className="mt-3 h-3 overflow-hidden rounded-full bg-surface" aria-hidden="true">
-            <div className="h-full rounded-full bg-green-600" style={{ width: `${Math.min(100, Number(data.checkInRate))}%` }} />
+          <div className="mt-4 rounded-[var(--radius-card)] border border-gray-200 bg-white p-4">
+            <CheckInDonut checkedIn={data.checkedIn} total={data.ticketHolders} rate={Number(data.checkInRate)} absentLabel={absentLabel} />
           </div>
 
           <p className="mt-2 text-xs text-muted">
@@ -127,9 +128,6 @@ export function EventAttendancePanel({ eventId }: { eventId: number }) {
   );
 }
 
-function Figure({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl bg-surface p-3"><p className="text-xs text-muted">{label}</p><p className="mt-1 text-lg font-bold">{value}</p></div>;
-}
 
 // Arrivals over time as simple bars. The backend only sends intervals with arrivals.
 function ArrivalsChart({ arrivals, dailyBars }: { arrivals: ArrivalInterval[]; dailyBars: boolean }) {
@@ -144,7 +142,7 @@ function ArrivalsChart({ arrivals, dailyBars }: { arrivals: ArrivalInterval[]; d
           <li key={slot.from} className="grid grid-cols-[110px_1fr_auto] items-center gap-2 text-xs">
             <span className="text-muted">{dailyBars ? formatShortDate(slot.from, locale) : formatTime(slot.from)}</span>
             <span className="h-4 rounded bg-surface" aria-hidden="true">
-              <span className="block h-full rounded bg-blue-600" style={{ width: `${(slot.checkedIn / max) * 100}%` }} />
+              <span className="block h-full rounded-r bg-primary" style={{ width: `${(slot.checkedIn / max) * 100}%` }} />
             </span>
             <span>{tx("{0} чел. · всего {1}", [slot.checkedIn, slot.cumulative])}</span>
           </li>

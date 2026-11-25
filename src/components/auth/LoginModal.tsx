@@ -65,8 +65,7 @@ export function LoginModal() {
   );
 
   return (
-    <Modal open={isLoginOpen} onClose={closeLogin} title={t("loginOrRegister")}>
-      <h2 className="text-center text-xl font-bold">{t("loginOrRegister")}</h2>
+    <Modal open={isLoginOpen} onClose={closeLogin} title={t("loginOrRegister")} titleClassName="px-6 text-center text-xl font-bold">
       <p className="mt-1 text-center text-xs text-muted">{t("signInByEmail")}</p>
 
       <div className="mt-5 flex rounded-lg bg-surface p-1">

@@ -16,11 +16,28 @@ await build({ stdin: { contents: `
   import App from './src/App';
   import { EventSalesDetail } from './src/pages/OrganizerInsightsPage';
   import { EventSuspensionDialog } from './src/components/events/EventSuspensionDialog';
+  import { ConfirmDialog } from './src/components/ui/ConfirmDialog';
+  import { EventAttendancePanel } from './src/components/analytics/EventAttendancePanel';
+  import { DateStrip } from './src/components/events/DateStrip';
+  export function renderConfirm(props) {
+    return renderToString(React.createElement(ConfirmDialog, { open: true, onConfirm() {}, onCancel() {}, ...props }));
+  }
+  export function renderDateStrip() {
+    return renderToString(React.createElement(DateStrip, { selected: null, onSelect() {} }));
+  }
   import { SeatMapPicker } from './src/components/events/SeatMapPicker';
   import { OrderItemsList } from './src/components/orders/OrderItemsList';
   import { CheckInResultCard } from './src/components/checkin/CheckInResultCard';
   export { readEventForm } from './src/pages/OrganizerPage';
+  export { ApiError } from './src/api/client';
   import { EventSalesAnalytics } from './src/components/analytics/SalesInsights';
+  export async function renderAttendance(eventId, data) {
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
+    client.setQueryData(['event-attendance', eventId, null, 15], data);
+    const html = renderToString(React.createElement(QueryClientProvider, { client }, React.createElement(EventAttendancePanel, { eventId })));
+    client.clear();
+    return html;
+  }
   export async function renderAnalytics(eventId, seeds) {
     const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
     for (const [key,value] of seeds) client.setQueryData(key,value);
@@ -31,11 +48,11 @@ await build({ stdin: { contents: `
     client.clear();
     return html;
   }
-  export async function renderSeatMap(map, seats) {
+  export async function renderSeatMap(map, seats, selected = {}) {
     const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
     client.setQueryData(['seat-section', 7, 1], { section: map.sections[0], seats });
     const stream = await renderToReadableStream(React.createElement(QueryClientProvider, { client },
-      React.createElement(SeatMapPicker, { eventId: 7, map, selected: {}, activeSectionId: 1, onSelectSection() {}, onToggle() {}, onSeatsGone() {} })));
+      React.createElement(SeatMapPicker, { eventId: 7, map, selected, activeSectionId: 1, onSelectSection() {}, onToggle() {}, onSeatsGone() {} })));
     await stream.allReady;
     const html = await new Response(stream).text();
     client.clear();
@@ -53,14 +70,19 @@ await build({ stdin: { contents: `
   export function renderSalesDetail(sales) {
     return renderToString(React.createElement(EventSalesDetail, { sales }));
   }
-  export async function renderRoute(url, user, seeds = [], storedLanguage) {
+  // errorSeeds: [queryKey, Error] pairs rendered as failed queries (not refetched on mount).
+  export async function renderRoute(url, user, seeds = [], storedLanguage, { errorSeeds = [], session = {} } = {}) {
     const storage = new Map(user ? [['bf_token', 'ui-test-token']] : []);
     if (storedLanguage) storage.set('bf_language', storedLanguage);
     globalThis.localStorage = { getItem: key => storage.get(key) ?? null };
-    globalThis.sessionStorage = { getItem: () => null };
+    globalThis.sessionStorage = { getItem: key => session[key] ?? null };
     const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
     if (user) client.setQueryData(['me', 'ui-test-token'], user);
     for (const [key, value] of seeds) client.setQueryData(key, value);
+    for (const [key, error] of errorSeeds) {
+      client.setQueryDefaults(key, { retryOnMount: false });
+      client.getQueryCache().build(client, { queryKey: key }).setState({ status: 'error', error, errorUpdatedAt: Date.now(), fetchStatus: 'idle' });
+    }
     const stream = await renderToReadableStream(React.createElement(QueryClientProvider, { client },
       React.createElement(MemoryRouter, { initialEntries: [url] },
         React.createElement(AuthProvider, null, React.createElement(App)))));
@@ -70,7 +92,7 @@ await build({ stdin: { contents: `
     return html;
   }
 `, resolveDir: process.cwd() }, bundle: true, packages: "external", platform: "node", format: "esm", outfile });
-const { renderRoute, renderSalesDetail, renderSuspensionDialog, renderSeatMap, renderOrderItems, renderCheckInResult, readEventForm, renderAnalytics } = await import(pathToFileURL(outfile));
+const { renderAttendance, ApiError, renderConfirm, renderDateStrip, renderRoute, renderSalesDetail, renderSuspensionDialog, renderSeatMap, renderOrderItems, renderCheckInResult, readEventForm, renderAnalytics } = await import(pathToFileURL(outfile));
 const attendee = { id: 2, email: "attendee@test.invalid", role: "ATTENDEE", verificationStatus: true };
 const organizer = { ...attendee, id: 1, role: "ORGANIZER" };
 const admin = { ...attendee, id: 9, role: "PLATFORM_ADMIN" };
@@ -159,9 +181,13 @@ test("attendee cannot open organizer or admin-only pages", async () => {
 });
 test("sales details render populated LocalDate daily statistics without a blank page", async () => {
   const html = renderSalesDetail({ revenue: 10000, paidOrders: 2, cancelledOrders: 0, expiredOrders: 0, discounts: 2000, netRevenue: 8000, processingFees: 200, estimatedPayout: 7800, salesByDay: [{ date: "2026-11-12", revenue: 5000, ticketsSold: 1 }, { date: "2026-11-13", revenue: 5000, ticketsSold: 1 }] });
-  assert.match(html, /12 ноября 2026/);
-  assert.match(html, /13 ноября 2026/);
+  // Axis labels show day and month; the full dates are in the table view (and the chart summary).
+  assert.match(html, />12 ноября</);
+  assert.match(html, />13 ноября</);
+  assert.match(html, /\(12 ноября 2026\)/);
+  assert.doesNotMatch(html, /Invalid Date|NaN/);
   assert.match(html, /Продажи по дням/);
+  assert.match(html, /aria-pressed="false"[^>]*>Показать таблицей</);
 });
 test("event suspension has an in-page reason form, length limit and explicit confirmation", async () => {
   const html = renderSuspensionDialog();
@@ -545,7 +571,7 @@ test("drafts have organizer preview links, a private-draft banner and disabled c
   assert.match(list,/href="\/events\/7\?preview=1"/);
   const html = await renderRoute("/events/7?preview=1&lang=en",organizer,[[["event",7],draft],[["ticket-types",7],[{ id:4,name:"Free",price:0,available:10 }]]]);
   assert.match(html,/Draft — not published/);
-  assert.match(html,/<button[^>]*disabled=""[^>]*>Choose tickets<\/button>/);
+  assert.match(html,/<button[^>]*disabled=""[^>]*>(?:<svg[\s\S]*?<\/svg>)?Choose tickets<\/button>/);
   assert.doesNotMatch(html,/Report event/);
 });
 
@@ -559,7 +585,7 @@ test("registration windows block both choosing and adding tickets, and display t
     assert.match(html,/Registration opens:/);
     assert.match(html,/Registration closes:/);
     assert.match(html,/Ends:/);
-    assert.match(html,/<button[^>]*disabled=""[^>]*>Choose tickets<\/button>/);
+    assert.match(html,/<button[^>]*disabled=""[^>]*>(?:<svg[\s\S]*?<\/svg>)?Choose tickets<\/button>/);
     assert.match(html,/<button[^>]*disabled=""[^>]*aria-label="Add a Free ticket"/);
   }
 });
@@ -575,12 +601,16 @@ test("paid confirmation offers calendar actions while pending confirmation does 
 test("ticket cancellation and refund do not imply event cancellation; calendar metadata decides", async () => {
   const ticket = { id:5,eventId:7,eventTitle:"Jazz",ticketTypeName:"Standard",attendeeEmail:attendee.email,orderId:42,status:"REFUNDED" };
   const seeds = [[["my-orders",0],page([])],[["my-tickets",0],page([ticket])]];
-  const active = await renderRoute("/account?lang=en",attendee,[...seeds,[["calendar",7],{ cancelled:false }]]);
+  // The refunded ticket's event is still on: the loaded event decides, no calendar request needed.
+  const active = await renderRoute("/account?lang=en",attendee,[...seeds,[["event",7],event]]);
   assert.match(active,/Add to calendar/);
   assert.doesNotMatch(active,/Download event cancellation/);
-  const cancelled = await renderRoute("/account?lang=en",attendee,[...seeds,[["calendar",7],{ cancelled:true }]]);
+  const cancelled = await renderRoute("/account?lang=en",attendee,[...seeds,[["event",7],{ ...event, status:"CANCELLED" }]]);
   assert.match(cancelled,/Download event cancellation \(.ics\)/);
   assert.doesNotMatch(cancelled,/Add to calendar/);
+  // A cancelled event is no longer public (404): then the calendar endpoint tells.
+  const hidden = await renderRoute("/account?lang=en",attendee,[...seeds,[["calendar",7],{ cancelled:true }]],undefined,{ errorSeeds:[[["event",7],new ApiError(404,"Not found")]] });
+  assert.match(hidden,/Download event cancellation \(.ics\)/);
 });
 
 test("sales analytics include real filter controls, server inventory metrics and all-time campaign attribution", async () => {
@@ -626,4 +656,264 @@ test("event sales explain processing fees and label net revenue after refunds", 
   assert.match(html,/Комиссия обработки удерживается из дохода организатора/);
   assert.doesNotMatch(html,/>После скидок<\/p>/);
   assert.match(html,/6.?800/);
+});
+
+// ---- Review fixes (phase 1) ----
+const almatyLocal = ms => new Date(Date.now() + 5 * 3600_000 + ms).toISOString().slice(0, 19);
+const buyable = [[["event", 7], { ...event, paidSalesActive: true }], [["ticket-types", 7], [{ id: 3, eventId: 7, name: "Standard", price: 5000, available: 10, sold: 0, quantity: 10, hidden: false }]]];
+test("an invalid promo from the event link shows its error", async () => {
+  const html = await renderRoute("/events/7?promo=BAD-TOKEN", attendee, buyable, undefined, {
+    errorSeeds: [[["promo-preview", 7, "BAD-TOKEN", true], new Error("Промокод не найден")]],
+  });
+  assert.match(html, /role="alert"[^>]*>Промокод не найден/);
+  assert.match(html, /value="BAD-TOKEN"/);
+});
+test("a promo stored by another campaign link is never shown or applied on the first render of an event", async () => {
+  const html = await renderRoute("/events/7", attendee, buyable, undefined, { session: { bf_promo: "OTHER-EVENT-TOKEN" } });
+  assert.doesNotMatch(html, /OTHER-EVENT-TOKEN/);
+  assert.doesNotMatch(html, /role="alert"/);
+});
+test("selected seats show a white checkmark and sold accessible seats keep their status symbol", async () => {
+  const section = { id: 1, key: "A", name: "North stand", kind: "SEATED", onSale: true, ticketTypeId: 4, ticketTypeName: "Standard", price: 1000, available: 2, x: 0, y: 0, width: 100, height: 40 };
+  const seats = [
+    { id: 1, row: "A", number: 1, x: 10, y: 20, accessible: false, status: "AVAILABLE" },
+    { id: 2, row: "A", number: 2, x: 20, y: 20, accessible: true, status: "SOLD" },
+    { id: 3, row: "A", number: 3, x: 30, y: 20, accessible: true, status: "AVAILABLE" },
+  ];
+  const selected = { 1: { id: 1, sectionId: 1, sectionName: "North stand", row: "A", number: 1, ticketTypeId: 4, ticketTypeName: "Standard", price: 1000 } };
+  const html = await renderSeatMap({ eventId: 7, width: 100, height: 40, sections: [section] }, seats, selected);
+  assert.match(html, /class="pointer-events-none fill-white"[^>]*>✓</);
+  assert.match(html, /class="pointer-events-none fill-white"[^>]*>×</);
+  assert.match(html, /class="pointer-events-none fill-black"[^>]*>3</);
+  assert.equal((html.match(/data-accessible-badge="true"/g) ?? []).length, 2);
+  assert.match(html, /Ряд A, место 2, доступная среда, Продано/);
+  assert.match(html, /значок рядом с местом/);
+});
+test("a pending order shows a live reservation countdown and warns under two minutes", async () => {
+  const seeds = minutes => [[["order", 42], { ...order, expiresAt: almatyLocal(minutes * 60_000) }], [["order-payments", 42], []]];
+  const calm = await renderRoute("/orders/42", attendee, seeds(10));
+  assert.match(calm, /Билеты зарезервированы ещё/);
+  assert.match(calm, /<time[^>]*>(10:00|09:5\d)<\/time>/);
+  assert.doesNotMatch(calm, /data-hold-warning/);
+  assert.equal((calm.match(/<main/g) ?? []).length, 1);
+  const urgent = await renderRoute("/orders/42", attendee, seeds(1.5));
+  assert.match(urgent, /data-hold-warning="true"/);
+  assert.match(urgent, /Осталось меньше 2 минут/);
+  assert.match(urgent, /<time[^>]*>01:(30|2\d)<\/time>/);
+});
+test("an expired hold disables payment and shows the expiry message", async () => {
+  const html = await renderRoute("/orders/42", attendee, [[["order", 42], { ...order, expiresAt: almatyLocal(-60_000) }], [["order-payments", 42], []]]);
+  assert.match(html, /disabled=""[^>]*>Оплатить заказ</);
+  assert.match(html, /Срок действия заказа истёк/);
+  assert.match(html, /Проверить оплату/);
+});
+test("event cards match the event page when the server minPrice is null", async () => {
+  const cards = [{ ...event, id: 7, title: "No tickets", minPrice: null }, { ...event, id: 8, title: "Hidden tickets", minPrice: null }, { ...event, id: 9, title: "Priced", minPrice: 2500 }];
+  const html = await renderRoute("/", null, [[["events"], page(cards)], [["ticket-types", 7], []], [["ticket-types", 8], [{ id: 1, eventId: 8, name: "Hidden", price: 100, available: 5, hidden: true }]]]);
+  assert.match(html, /Билеты не требуются/);
+  assert.match(html, /Билеты пока недоступны/);
+  assert.match(html, /от 2[\s ]500 ₸/);
+});
+
+// ---- Accessibility and SRS gaps (phase 2) ----
+test("ConfirmDialog is a labelled alert dialog with verb-first destructive actions", () => {
+  const html = renderConfirm({ title: "Отменить заказ №42?", message: "Билеты вернутся в продажу.", confirmLabel: "Отменить заказ", cancelLabel: "Оставить заказ", destructive: true });
+  assert.match(html, /role="alertdialog"/);
+  const labelledBy = html.match(/aria-labelledby="([^"]+)"/)?.[1];
+  assert.ok(labelledBy);
+  assert.match(html, new RegExp(`<h2 id="${labelledBy}"[^>]*>Отменить заказ №42\\?</h2>`));
+  assert.match(html, /bg-danger[^>]*>Отменить заказ</);
+  assert.match(html, />Оставить заказ</);
+  const en = renderConfirm({ title: "T", confirmLabel: "OK" });
+  assert.match(en, />Отмена</);
+});
+test("modal dialogs are labelled by their visible heading", () => {
+  const html = renderSuspensionDialog();
+  const labelledBy = html.match(/role="dialog"[^>]*aria-labelledby="([^"]+)"/)?.[1];
+  assert.ok(labelledBy);
+  assert.match(html, new RegExp(`id="${labelledBy}"[^>]*>Приостановить мероприятие<`));
+  assert.equal((html.match(/Приостановить мероприятие</g) ?? []).length, 1);
+});
+test("no window.confirm and no sub-12px text remain in the app", () => {
+  for (const root of ["src/pages", "src/components"]) {
+    for (const name of fs.readdirSync(root, { recursive: true }).filter(name => name.endsWith(".tsx"))) {
+      const source = fs.readFileSync(path.join(root, name), "utf8");
+      assert.doesNotMatch(source, /window\.confirm\(/, name);
+      assert.doesNotMatch(source, /text-\[1[01]px\]/, name);
+    }
+  }
+});
+test("weekend dates use a colour that passes contrast", () => {
+  const html = renderDateStrip();
+  assert.doesNotMatch(html, /text-orange-500|text-\[10px\]/);
+  assert.match(html, /text-orange-800/);
+});
+test("the home page has exactly one h1 with or without filters", async () => {
+  for (const url of ["/", "/?q=jazz", "/?category=MUSIC&date=2027-12-10"]) {
+    const html = await renderRoute(url, null, catalogSeeds);
+    assert.equal((html.match(/<h1[\s>]/g) ?? []).length, 1, url);
+  }
+});
+test("my tickets show event date, time and venue before the calendar menu", async () => {
+  const html = (await renderRoute("/account", attendee, [[["my-orders", 0], page([])], [["my-tickets", 0], page([{ id: 5, eventId: 7, eventTitle: "Jazz", ticketTypeName: "Standard", status: "VALID", attendeeEmail: attendee.email, orderId: 42 }])],
+    [["event", 7], { ...event, venue: { id: 1, name: "Hall A", address: "Астана, Абая 1" } }]])).replace(/<!-- -->/g, "");
+  assert.match(html, /10 декабря 2027, 18:00/);
+  assert.match(html, /Hall A, Астана, Абая 1/);
+  assert.ok(html.indexOf("Hall A") < html.indexOf("Добавить в календарь"));
+  assert.ok(html.indexOf("Билет №5") < html.indexOf("Добавить в календарь"));
+});
+test("staff check-in focuses the code field and offers optional camera scanning", async () => {
+  const html = await renderRoute("/staff", organizer, [
+    [["assigned-events"], page([event])],
+    [["check-in-stats", 7], { eventId: 7, registered: 0, checkedIn: 0, notCheckedIn: 0 }],
+    [["event-attendees", 7, "", 0], page([])],
+  ]);
+  assert.match(html, /<input[^>]*autofocus=""[^>]*aria-label="Код билета"|<input[^>]*aria-label="Код билета"[^>]*autofocus=""/i);
+  assert.match(html, /aria-expanded="false"[^>]*>Сканировать камерой</);
+});
+
+// ---- Redesign (phase 3) ----
+test("the header groups account and role links in a collapsed, labelled user menu", async () => {
+  const html = await renderRoute("/", admin, [...catalogSeeds, [["unread-notifications", admin.id], { unread: 3 }]]);
+  assert.match(html, /aria-label="BiletFlow"/);
+  const button = html.match(/<button[^>]*aria-expanded="false"[^>]*aria-controls="([^"]+)"/);
+  assert.ok(button, "menu button");
+  assert.match(html, new RegExp(`id="${button[1]}" hidden=""`));
+  for (const href of ["/account", "/account/settings", "/notifications", "/support", "/admin/dashboard", "/admin/users"]) assert.match(html, new RegExp(`href="${href}"`));
+  assert.match(html, /aria-label="Уведомления: непрочитанных 3"/);
+  const guest = await renderRoute("/", null, catalogSeeds);
+  assert.match(guest, />Войти</);
+  assert.doesNotMatch(guest, /aria-controls=/);
+});
+test("category chips have icons and mark the active category without relying on colour", async () => {
+  const html = await renderRoute("/?category=MUSIC", null, catalogSeeds);
+  const nav = html.match(/<nav aria-label="Категории"[\s\S]*?<\/nav>/)?.[0] ?? "";
+  assert.match(nav, /aria-current="page"[^>]*>(<svg[\s\S]*?<\/svg>)?Музыка/);
+  assert.equal((nav.match(/<svg/g) ?? []).length, (nav.match(/<li/g) ?? []).length);
+});
+test("the hero is an accessible carousel of the next three events with a pause control", async () => {
+  const many = [7, 8, 9, 10].map((id, i) => ({ ...event, id, title: `Show ${id}`, startTime: `2027-12-1${i}T18:00:00`, minPrice: 1000 }));
+  const html = (await renderRoute("/", null, [[["events"], page(many)]])).replace(/<!-- -->/g, "");
+  const hero = html.match(/<section aria-roledescription="карусель"[\s\S]*?<\/section>/)?.[0] ?? "";
+  assert.match(hero, /aria-label="Ближайшие события"/);
+  assert.match(hero, /<h2[^>]*>Show 7<\/h2>/);
+  assert.equal((hero.match(/aria-label="Слайд \d: Show/g) ?? []).length, 3);
+  assert.doesNotMatch(hero, /Show 10/);
+  assert.match(hero, /aria-current="true"/);
+  assert.match(hero, /aria-label="Предыдущее событие"/);
+  assert.match(hero, /aria-label="Следующее событие"/);
+  assert.match(hero, /aria-pressed="false"[^>]*>Пауза</);
+  assert.match(hero, /data-poster-fallback="true"/);
+  assert.match(hero, /от 1[\s ]000 ₸/);
+});
+test("event cards show a date badge, icon rows and a few-left chip from already loaded ticket types", async () => {
+  const html = (await renderRoute("/?q=jazz", null, [[["events"], page([{ ...event, title: "Jazz", paidSalesActive: true }])], [["ticket-types", 7], [{ id: 1, eventId: 7, name: "A", price: 3000, available: 4, hidden: false }]]])).replace(/<!-- -->/g, "");
+  assert.match(html, /text-lg font-extrabold">10</);
+  assert.match(html, /uppercase text-primary-dark">дек/);
+  assert.match(html, /Осталось 4/);
+  assert.match(html, /от 3[\s ]000 ₸/);
+  const plenty = await renderRoute("/?q=jazz", null, [[["events"], page([{ ...event, title: "Jazz", minPrice: 3000 }])]]);
+  assert.doesNotMatch(plenty, /Осталось \d/);
+});
+test("the weekend chip filters by a date range and empty results offer a reset", async () => {
+  const html = await renderRoute("/?date=2027-12-11_2027-12-12", null, [[["events"], page([{ ...event, title: "Friday", startTime: "2027-12-10T18:00:00" }, { ...event, id: 8, title: "Saturday", startTime: "2027-12-11T18:00:00" }])]]);
+  assert.match(html, /Saturday/);
+  assert.doesNotMatch(html, /<h3[^>]*>Friday/);
+  assert.match(html, />Выходные</);
+  assert.match(html, />Завтра</);
+  const empty = await renderRoute("/?q=nothing-matches", null, catalogSeeds);
+  assert.match(empty, /Ничего не найдено/);
+  assert.match(empty, /<button[^>]*>Сбросить фильтры<\/button>/);
+});
+test("the event page has a poster header, map links, anchored sections, share, and sticky purchase panels", async () => {
+  const seeds = [[["event", 7], { ...event, paidSalesActive: true, description: "About", refundPolicy: "Refunds", venue: { id: 1, name: "Hall A", address: "Астана, Абая 1" } }],
+    [["ticket-types", 7], [{ id: 3, eventId: 7, name: "Standard", price: 5000, available: 10, sold: 0, quantity: 10, hidden: false }]]];
+  const html = (await renderRoute("/events/7", attendee, seeds)).replace(/<!-- -->/g, "");
+  assert.equal((html.match(/<h1[\s>]/g) ?? []).length, 1);
+  assert.match(html, /href="https:\/\/www\.google\.com\/maps\/search\/\?api=1&amp;query=%D0%90%D1%81%D1%82%D0%B0%D0%BD%D0%B0%2C%20%D0%90%D0%B1%D0%B0%D1%8F%201"/);
+  assert.match(html, /href="https:\/\/2gis\.kz\/search\//);
+  for (const anchor of ["about", "venue", "refund", "tickets"]) {
+    assert.match(html, new RegExp(`href="#${anchor}"`));
+    assert.match(html, new RegExp(`id="${anchor}"`));
+  }
+  assert.match(html, />Поделиться</);
+  assert.match(html, /aria-label="Покупка билетов"/);
+  assert.equal((html.match(/от 5[\s ]000 ₸/g) ?? []).length >= 2, true, "price in the sticky panel and the mobile bar");
+  assert.match(html, /Политика возврата/);
+  assert.match(html, /Задать вопрос о событии/);
+});
+test("ticket rows are stubs with 44px steppers and an order summary", async () => {
+  const html = await renderRoute("/events/7", attendee, buyable);
+  assert.match(html, /data-ticket-stub="true"/);
+  assert.match(html, /class="flex h-11 w-11[^"]*"[^>]*>\+</);
+  assert.match(html, /border-dashed/);
+  assert.match(html, /data-order-summary="true"/);
+  assert.match(html, /disabled="" aria-label="Убрать билет Standard"/);
+});
+test("the order page shows checkout steps and a countdown ring", async () => {
+  const html = (await renderRoute("/orders/42", attendee, [[["order", 42], { ...order, createdAt: almatyLocal(-5 * 60_000), expiresAt: almatyLocal(10 * 60_000) }], [["order-payments", 42], []]])).replace(/<!-- -->/g, "");
+  assert.match(html, /aria-label="Шаги оформления"/);
+  assert.match(html, /<li aria-current="step"[\s\S]*?Оплата/);
+  assert.equal((html.match(/\(выполнено\)/g) ?? []).length, 2);
+  assert.match(html, /stroke-dasharray="(6[5-7]\.\d+) 100"/);
+  const paid = (await renderRoute("/orders/42", attendee, [[["order", 42], { ...order, status: "PAID" }], [["order-payments", 42], []]])).replace(/<!-- -->/g, "");
+  assert.equal((paid.match(/\(выполнено\)/g) ?? []).length, 4);
+  assert.match(paid, /data-status="PAID"/);
+});
+test("wallet ticket cards use status badges with icon and text, a perforation and an expandable QR", async () => {
+  const base = { eventTitle: "Jazz", ticketTypeName: "Standard", attendeeEmail: attendee.email, orderId: 42, eventId: 7 };
+  const html = await renderRoute("/account", attendee, [[["my-orders", 0], page([])], [["my-tickets", 0], page(["VALID", "USED", "CANCELLED", "REFUNDED"].map((status, i) => ({ ...base, id: 5 + i, status })))]]);
+  for (const [status, text] of [["VALID", "Действителен"], ["USED", "Использован"], ["CANCELLED", "Отменено"], ["REFUNDED", "Возвращён"]]) {
+    assert.match(html, new RegExp(`data-status="${status}"[^>]*><svg[\\s\\S]*?</svg>${text}`), status);
+  }
+  assert.match(html, /aria-expanded="false" aria-controls="ticket-qr-5"/);
+  assert.match(html, /id="ticket-qr-5" hidden=""/);
+  assert.match(html, /border-dashed/);
+});
+test("seat maps colour sections by price with a legend, zoom controls and a running total", async () => {
+  const sections = [
+    { id: 1, key: "A", name: "North", kind: "SEATED", onSale: true, ticketTypeId: 4, ticketTypeName: "Standard", price: 1000, available: 3, x: 0, y: 0, width: 50, height: 40 },
+    { id: 2, key: "B", name: "South", kind: "SEATED", onSale: true, ticketTypeId: 5, ticketTypeName: "VIP", price: 3000, available: 3, x: 50, y: 0, width: 50, height: 40 },
+  ];
+  const seats = [{ id: 1, row: "A", number: 1, x: 10, y: 20, accessible: false, status: "AVAILABLE" }, { id: 2, row: "A", number: 2, x: 20, y: 20, accessible: false, status: "AVAILABLE" }];
+  const selected = { 1: { id: 1, sectionId: 1, sectionName: "North", row: "A", number: 1, ticketTypeId: 4, ticketTypeName: "Standard", price: 1000 }, 9: { id: 9, sectionId: 2, sectionName: "South", row: "C", number: 4, ticketTypeId: 5, ticketTypeName: "VIP", price: 3000 } };
+  const html = (await renderSeatMap({ eventId: 7, width: 100, height: 40, sections }, seats, selected)).replace(/<!-- -->/g, "");
+  assert.match(html, /style="fill:#f47230"/);
+  assert.match(html, /aria-label="Цены по секторам"/);
+  assert.match(html, /background:#257de0[^>]*><\/span>1[\s ]000 ₸/);
+  assert.match(html, /role="toolbar" aria-label="Масштаб схемы"/);
+  assert.match(html, /aria-label="Приблизить"/);
+  assert.match(html, /Сумма за места: 4[\s ]000 ₸/);
+  assert.match(html, /Выбранные места · 2/);
+});
+test("sales details use KPI cards and an SVG chart for ticket types", () => {
+  const html = renderSalesDetail({ revenue: 10000, paidOrders: 2, cancelledOrders: 0, expiredOrders: 0, discounts: 0, netRevenue: 10000, processingFees: 0, estimatedPayout: 10000, salesByDay: [{ date: "2026-11-12", revenue: 5000, ticketsSold: 1 }],
+    ticketTypes: [{ ticketTypeId: 1, name: "VIP", price: 5000, hidden: false, quantity: 10, sold: 2, reserved: 1, available: 7, revenue: 10000 }] }).replace(/<!-- -->/g, "");
+  assert.match(html, /<svg[^>]*role="img"[^>]*aria-label="Выручка по дням: 1 дней/);
+  assert.match(html, /<path d="M[^"]*Q[^"]*Z" fill="#534ab7"/);
+  assert.match(html, /Продажи по типам билетов/);
+  assert.match(html, /Продано: 2 · 20%/);
+  assert.match(html, /background:#f47230/);
+  assert.match(html, /rounded-xl bg-primary-soft text-primary/);
+});
+test("the dashboard has a labelled sidebar that collapses on small screens", async () => {
+  const html = await renderRoute("/organizer/events", organizer, [[["organizer-profile", "ORGANIZER"], { userId: 1 }], [["organizer-events", 1, 0], page([event])]]);
+  assert.match(html, /aria-expanded="false" aria-controls="dashboard-nav"/);
+  assert.match(html, /<nav id="dashboard-nav" aria-label="Разделы кабинета организатора" class="hidden[^"]*lg:block"/);
+  assert.match(html, /data-status="PUBLISHED"|Опубликовано/);
+});
+test("attendance shows check-in share as a labelled donut with counts", async () => {
+  const html = (await renderAttendance(7, { eventId: 7, eventTitle: "Jazz", phase: "ACTIVE", ticketHolders: 40, checkedIn: 30, absent: 10, checkInRate: 75, undoneCheckIns: 0, ticketTypes: [], arrivals: [], intervalMinutes: 15 })).replace(/<!-- -->/g, "");
+  assert.match(html, /role="img" aria-label="Прошли check-in: 30 из 40 \(75%\)"/);
+  assert.match(html, /stroke-dasharray="75 100"/);
+  assert.match(html, />75%</);
+  assert.match(html, /Ещё не пришли: <strong>10</);
+});
+test("pages render inside one polite toast region and a reduced-motion-safe page transition", async () => {
+  const html = await renderRoute("/", null, catalogSeeds);
+  assert.equal((html.match(/aria-live="polite" role="status" class="pointer-events-none fixed/g) ?? []).length, 1);
+  assert.match(html, /class="animate-page-in"/);
+  const css = fs.readFileSync("src/index.css", "utf8");
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation-duration: 0\.01ms/);
+  assert.match(css, /:focus-visible \{\s*outline: 2px solid var\(--color-focus\)/);
 });

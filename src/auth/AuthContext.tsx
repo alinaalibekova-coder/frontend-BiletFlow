@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as authApi from "../api/auth";
-import { ApiError, clearToken, getToken, saveToken, onAuthFailure } from "../api/client";
+import { ApiError, TOKEN_KEY, clearToken, getToken, saveToken, onAuthFailure, onStoredTokenChange } from "../api/client";
 import type { User } from "../api/types";
 
 // Everything about "who is logged in" lives here.
@@ -52,6 +52,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionError(message);
     logout();
   }), [logout]);
+
+  // Another tab signed out, or into another account: follow the saved token and drop this
+  // tab's private data, including requests still in flight with the old token.
+  const tokenRef = useRef(token);
+  useEffect(() => { tokenRef.current = token; }, [token]);
+  const syncStoredToken = useCallback(() => {
+    const stored = getToken();
+    if (stored === tokenRef.current) return;
+    tokenRef.current = stored;
+    void queryClient.cancelQueries();
+    queryClient.clear();
+    setToken(stored);
+  }, [queryClient]);
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      // key is null when another tab cleared all of localStorage.
+      if (event.key === null || event.key === TOKEN_KEY) syncStoredToken();
+    };
+    window.addEventListener("storage", onStorage);
+    const stopListening = onStoredTokenChange(syncStoredToken);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      stopListening();
+    };
+  }, [syncStoredToken]);
 
   // An old or expired token: forget it.
   useEffect(() => {

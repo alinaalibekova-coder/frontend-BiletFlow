@@ -2,7 +2,7 @@
 // Every request goes through here, so the login token and error handling
 // are written once.
 
-const TOKEN_KEY = "bf_token";
+export const TOKEN_KEY = "bf_token";
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const saveToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
@@ -14,10 +14,20 @@ export function onAuthFailure(listener: (message: string) => void) {
   authFailureListeners.add(listener);
   return () => { authFailureListeners.delete(listener); };
 }
+// Called when a 401 answers a request made with a token that is no longer the saved one:
+// another tab signed out or into another account. Listeners re-read the saved token, so a
+// tab never stays "signed in" while every request it makes is rejected.
+const tokenChangeListeners = new Set<() => void>();
+export function onStoredTokenChange(listener: () => void) {
+  tokenChangeListeners.add(listener);
+  return () => { tokenChangeListeners.delete(listener); };
+}
 function rejectAuthentication(status: number, message: string, code: string | undefined, token: string | null) {
   if (token && getToken() === token && (status === 401 || (status === 403 && code === "ACCOUNT_SUSPENDED"))) {
     clearToken();
     authFailureListeners.forEach(listener => listener(message));
+  } else if (status === 401) {
+    tokenChangeListeners.forEach(listener => listener());
   }
 }
 
@@ -66,7 +76,13 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   const text = await response.text();
-  return (text ? JSON.parse(text) : undefined) as T;
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // e.g. index.html from a misrouted /api request: not a server answer the app can use.
+    throw new ApiError(response.status, "Сервер вернул неожиданный ответ. Обновите страницу или попробуйте позже.", "INVALID_RESPONSE");
+  }
 }
 
 export async function apiBlob(path: string): Promise<Blob> {

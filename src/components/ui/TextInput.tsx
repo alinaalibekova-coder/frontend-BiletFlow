@@ -17,7 +17,7 @@ export function TextInput({ label, error, className = "", ...rest }: Props) {
         id={id}
         aria-invalid={!!error}
         aria-describedby={error ? `${id}-error` : undefined}
-        className={`w-full rounded-lg bg-surface px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand ${
+        className={`w-full rounded-lg bg-surface px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary ${
           error ? "ring-2 ring-red-500" : ""
         }`}
         placeholder={label}

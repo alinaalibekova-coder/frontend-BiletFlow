@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { getAllEvents, getEvent, getTicketTypes } from "../api/events";
 import { parseDate } from "../lib/format";
+import { ApiError } from "../api/client";
 import type { Event, TicketType } from "../api/types";
 
 // Only events attendees should see: published and public.
@@ -31,6 +32,18 @@ export function useEvent(id: number) {
   });
 }
 
+// Event details for a ticket card. Same query key as the event page, so several tickets of one
+// event share one request. A cancelled event is no longer public (404): don't retry that.
+export function useTicketEvent(id: number) {
+  return useQuery({
+    queryKey: ["event", id],
+    queryFn: () => getEvent(id),
+    enabled: Number.isFinite(id),
+    staleTime: 5 * 60 * 1000,
+    retry: (failures, error) => !(error instanceof ApiError && error.status === 404) && failures < 2,
+  });
+}
+
 export function useTicketTypes(eventId: number, enabled = true) {
   return useQuery({
     queryKey: ["ticket-types", eventId],
@@ -39,8 +52,17 @@ export function useTicketTypes(eventId: number, enabled = true) {
   });
 }
 
-// Cheapest ticket that is on sale, or null if there are none.
-export function minPrice(types: TicketType[] | undefined): number | null {
-  const prices = (types ?? []).filter((t) => !t.hidden).map((t) => t.price);
+// Whether a ticket type can be put in an order right now: listed, not sold out, inside its own
+// sales window, and not a paid type while the event's paid sales are inactive.
+export function isBuyableNow(type: TicketType, paidSalesActive?: boolean, now = Date.now()): boolean {
+  return !type.hidden && type.available > 0
+    && !(type.price > 0 && paidSalesActive === false)
+    && !(type.salesStart && parseDate(type.salesStart).getTime() > now)
+    && !(type.salesEnd && parseDate(type.salesEnd).getTime() <= now);
+}
+
+// Cheapest ticket that is on sale right now, or null if none can be bought.
+export function minPrice(types: TicketType[] | undefined, paidSalesActive?: boolean, now = Date.now()): number | null {
+  const prices = (types ?? []).filter((t) => isBuyableNow(t, paidSalesActive, now)).map((t) => t.price);
   return prices.length ? Math.min(...prices) : null;
 }
