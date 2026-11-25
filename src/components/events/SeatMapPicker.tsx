@@ -33,11 +33,11 @@ interface Props {
 const SEATS_REFRESH_MS = 15_000;
 
 // Seat fill and the colour of the symbol drawn on it. Symbol contrast on each fill:
-// selected #111 + white 18.9:1, free emerald-500 + black 8.3:1 (hover emerald-400 10.9:1),
+// selected primary + white 6.9:1, free emerald-500 + black 8.3:1 (hover emerald-400 10.9:1),
 // held amber-300 + black 14.6:1, yours blue-300 + black 11.7:1, sold gray-600 + white 7.6:1,
 // unavailable gray-200 + black 17:1.
 export function seatLook(status: Seat["status"], isSelected: boolean): { fill: string; text: string } {
-  if (isSelected) return { fill: "fill-brand", text: "fill-white" };
+  if (isSelected) return { fill: "fill-primary", text: "fill-white" };
   switch (status) {
     case "AVAILABLE": return { fill: "fill-emerald-500 hover:fill-emerald-400 cursor-pointer", text: "fill-black" };
     case "HELD": return { fill: "fill-amber-300", text: "fill-black" };
@@ -116,9 +116,9 @@ export function SeatMapPicker({ eventId, map, selected, activeSectionId, onSelec
           const look = section.kind === "STANDING"
             ? "fill-white stroke-gray-400"
             : isActive
-              ? "fill-brand stroke-brand"
+              ? "fill-primary stroke-primary-dark"
               : canPick
-                ? "fill-white stroke-brand cursor-pointer hover:fill-gray-100"
+                ? "fill-white stroke-primary cursor-pointer hover:fill-primary-soft"
                 : "fill-gray-200 stroke-gray-300";
           const textLook = isActive ? "fill-white" : section.kind === "SEATED" && !canPick ? "fill-gray-400" : "fill-black";
           const label = section.kind === "STANDING"
@@ -311,7 +311,7 @@ function SeatLegend() {
   // The same fill and symbol as on the map, so the legend works without colour too.
   const items: [string, string, string][] = [
     ["bg-emerald-500 text-black", "1", tx("Свободно")],
-    ["bg-brand text-white", "✓", tx("Выбрано")],
+    ["bg-primary text-white", "✓", tx("Выбрано")],
     ["bg-amber-300 text-black", "…", tx("Зарезервировано другим покупателем")],
     ["bg-blue-300 text-black", "Y", tx("В вашем неоплаченном заказе")],
     ["bg-gray-600 text-white", "×", tx("Продано")],

@@ -266,7 +266,7 @@ export function OrganizerDashboardLayout() {
             key={tab.to}
             to={tab.to}
             className={({ isActive }) =>
-              `whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold ${isActive ? "bg-black text-white" : "bg-surface hover:bg-gray-200"}`
+              `whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold ${isActive ? "bg-primary text-white" : "bg-surface hover:bg-gray-200"}`
             }
           >
             {tab.label}
@@ -1558,7 +1558,7 @@ function FormField({ label, children }: { label: string; children: ReactNode }) 
   );
 }
 
-const fieldClass = "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand";
+const fieldClass = "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary";
 
 function formatDate(value: string, locale = "ru-RU") {
   return formatDateTime(value, locale);

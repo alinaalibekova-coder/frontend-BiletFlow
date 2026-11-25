@@ -710,7 +710,7 @@ test("ConfirmDialog is a labelled alert dialog with verb-first destructive actio
   const labelledBy = html.match(/aria-labelledby="([^"]+)"/)?.[1];
   assert.ok(labelledBy);
   assert.match(html, new RegExp(`<h2 id="${labelledBy}"[^>]*>Отменить заказ №42\\?</h2>`));
-  assert.match(html, /bg-red-700[^>]*>Отменить заказ</);
+  assert.match(html, /bg-danger[^>]*>Отменить заказ</);
   assert.match(html, />Оставить заказ</);
   const en = renderConfirm({ title: "T", confirmLabel: "OK" });
   assert.match(en, />Отмена</);

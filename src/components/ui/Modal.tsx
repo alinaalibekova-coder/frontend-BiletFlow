@@ -58,15 +58,15 @@ export function Modal({ open, onClose, title, titleClassName = "pr-6 text-xl fon
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-4"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div ref={dialogRef} role={role} aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="relative max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-6 shadow-xl outline-none">
+      <div ref={dialogRef} role={role} aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="relative max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-[var(--radius-card)] bg-white p-6 shadow-panel outline-none">
         <button
           type="button"
           onClick={onClose}
           aria-label={t("close")}
-          className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-2xl leading-none text-muted hover:bg-surface hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-2xl leading-none text-muted hover:bg-surface hover:text-black"
         >
           ×
         </button>

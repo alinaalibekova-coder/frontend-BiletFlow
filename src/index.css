@@ -1,12 +1,81 @@
 @import "tailwindcss";
 
-/* Design values from the Figma wireframes. Change them here, not in components. */
+/* Design tokens. Change them here, not in components.
+   Contrast (WCAG AA, text >= 4.5:1), checked for every pairing used:
+   white on primary 6.9:1, white on primary-dark 10.3:1, primary-dark on primary-soft 8.9:1,
+   primary on white 6.9:1, muted on white 5.3:1 / on surface 4.8:1, ink on warn 8.4:1,
+   warn-ink on warn-soft 7.2:1, success-ink on success-soft 6.2:1, danger-ink on danger-soft 6.5:1,
+   info-ink on info-soft 7.1:1, white on success 5.4:1, white on danger 6.6:1. */
 @theme {
-  --color-brand: #111111;   /* black buttons */
-  --color-surface: #f2f2f2; /* grey header, cards, placeholders */
-  --color-muted: #6b6b6b;   /* secondary text */
+  --color-brand: #111111;          /* neutral text and icons only; actions use primary */
+  --color-surface: #f2f2f2;        /* quiet backgrounds, placeholders */
+  --color-muted: #6b6b6b;          /* secondary text */
+  --color-ink: #14122b;            /* headings, dark hero backgrounds */
+
+  --color-primary: #534ab7;        /* buttons, active states, links that act */
+  --color-primary-dark: #3c3489;   /* hover/pressed, text on primary-soft */
+  --color-primary-soft: #eeedfe;   /* selected chips, highlights */
+
+  --color-warn: #ef9f27;           /* "few left" accent (with ink text) */
+  --color-warn-soft: #fdf1de;
+  --color-warn-ink: #7a4300;
+  --color-success: #1f7a45;
+  --color-success-soft: #e6f4ea;
+  --color-success-ink: #17663a;
+  --color-danger: #b42318;
+  --color-danger-soft: #fceaea;
+  --color-danger-ink: #a3221b;
+  --color-info-soft: #e8f0fb;
+  --color-info-ink: #1d4f91;
+
+  --color-focus: #534ab7;
+
+  --radius-card: 14px;
+  --shadow-soft: 0 1px 2px rgb(20 18 43 / 0.06), 0 1px 3px rgb(20 18 43 / 0.08);
+  --shadow-lifted: 0 8px 24px -6px rgb(20 18 43 / 0.18), 0 2px 6px rgb(20 18 43 / 0.08);
+  --shadow-panel: 0 12px 40px -12px rgb(20 18 43 / 0.25);
+
+  --animate-shimmer: shimmer 1.4s linear infinite;
+  --animate-page-in: page-in 220ms ease-out both;
+
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+  @keyframes page-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+  }
 }
 
 body {
   font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--color-brand);
+}
+
+/* One consistent, visible focus ring for keyboard users. */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* Skeleton placeholder with a moving highlight. */
+.shimmer {
+  background: linear-gradient(90deg, var(--color-surface) 25%, #e6e6ec 50%, var(--color-surface) 75%);
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+/* Hide scrollbars on horizontally scrolling chip rows; they stay scrollable by touch, wheel and keys. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* People who ask for less motion get none: no transitions, transforms or shimmer. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
